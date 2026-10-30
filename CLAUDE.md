@@ -38,6 +38,14 @@ dependency used only to verify final rules.
   count-semiring products (removes the target edge leaking into its own predictor):
   `simple = M1·M2·M3 − diag(M1·M2)·M3 − M1·diag(M2·M3) + M1∘M2ᵀ∘M3`, then drop a=d.
   Requires self-loops removed and one global node index.
+- **Production fidelity.** Rules must behave under standard Translator querying, so the
+  predictor side uses every edge as-is (no provenance filtering, no canonicalization at
+  build). Which stored atoms/orientations a query predicate matches is decided by Gandalf's
+  own `PredicateExpander`/`QualifierExpander` (`semantics.py`), quirks included (e.g.
+  `overlaps` does not match stored `part_of`). Node in class C iff C is in its KGX category
+  list (KGX lists are ancestor-closed), same as Gandalf.
+- **Target evidence** is configurable (`target_record_exclusions`); default drops text-mined
+  and negated records. Predictions are kept (strong GO logical predictions).
 - Excluded: `subclass_of` as a hop; node-level subclass expansion. Hub filtering is optional,
   off by default.
 
@@ -45,7 +53,8 @@ dependency used only to verify final rules.
 
 ```
 ingest   KGX jsonl -> compact int arrays + edge-type / category-set tables  (once per release)
-build    ingest + vocabulary -> per (class, pseudo-predicate, class) CSR matrices    (TODO)
+build    ingest + config/default.yaml -> deduplicated (subject, object) pairs per semantic
+         atom (stored predicate + qualifier values), stored orientation, target-evidence flag
 mine     --target T --max-hops 3 -> rules + parent links                            (TODO)
 verify   top rules -> Gandalf exact counts + intermediate-node concentration        (TODO)
 rank     subsumption/redundancy filter + ranking                                    (TODO)
@@ -58,8 +67,8 @@ rank     subsumption/redundancy filter + ranking                                
 - Node `category` lists are the full ancestor closure in **no particular order**; derive
   the most specific classes from Biolink, never from list position.
 - Both `gene_associated_with_condition` and `condition_associated_with_gene` are stored
-  (183,145 each) — inverses must be canonicalized before building matrices.
-- Edges carry `negated`; negated edges are not positive evidence.
+  (183,145 each). Not canonicalized: production expansion decides what matches.
+- Edges carry `negated` (3.4 K, mostly GO); kept as predictors, excluded as target evidence.
 - `/projects/sequence_analysis` is shared and can run near-full: `df -h` before big runs.
 
 ## Rules of the road

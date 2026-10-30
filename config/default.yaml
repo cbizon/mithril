@@ -1,0 +1,18 @@
+# biolink-rules build configuration.
+#
+# The PREDICTOR side always uses the graph exactly as production queries see it:
+# no edge is removed from predictor paths. The only predictor-side choice is which
+# stored predicates may appear as a hop at all (subclass_of is excluded).
+
+# Stored predicates never used as a path hop or target.
+exclude_hop_predicates:
+  - biolink:subclass_of
+
+# Edge records that are NOT evidence for a target edge. A record is excluded if it
+# matches ANY entry; an entry matches when every listed field equals the value.
+# Fields are the ingest edge-type columns (see ingest.EDGE_TYPE_FIELDS).
+# A (subject, object) pair counts as a target pair if at least one of its records
+# survives these exclusions.
+target_record_exclusions:
+  - {agent_type: text_mining_agent}
+  - {negated: "true"}

@@ -9,6 +9,7 @@ authors = [
 requires-python = ">=3.12"
 dependencies = [
     "bmt>=1.5.0",
+    "gandalf-csr",
     "numpy>=2.5.4",
     "orjson>=3.13.0",
     "python-graphblas>=2025.2.0",
@@ -31,3 +32,6 @@ biolink-rules = "biolink_rules.cli:main"
 [tool.pytest.ini_options]
 addopts = "--doctest-modules"
 testpaths = ["tests", "src"]
+
+[tool.uv.sources]
+gandalf-csr = { path = "../gandalf", editable = true }

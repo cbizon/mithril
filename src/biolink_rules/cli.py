@@ -6,6 +6,7 @@ import argparse
 import json
 from pathlib import Path
 
+from biolink_rules.build import build
 from biolink_rules.ingest import ingest
 
 
@@ -17,6 +18,13 @@ def main(argv: list[str] | None = None) -> None:
     p_ingest.add_argument("--kg", type=Path, required=True, help="Directory with nodes.jsonl and edges.jsonl")
     p_ingest.add_argument("--out", type=Path, required=True, help="Output directory")
 
+    p_build = stages.add_parser("build", help="ingest + config -> deduplicated edges per semantic atom")
+    p_build.add_argument("--ingest", type=Path, required=True, help="Ingest output directory")
+    p_build.add_argument("--config", type=Path, default=Path("config/default.yaml"))
+    p_build.add_argument("--out", type=Path, required=True, help="Output directory")
+
     args = parser.parse_args(argv)
     if args.stage == "ingest":
         print(json.dumps(ingest(args.kg, args.out), indent=2))
+    elif args.stage == "build":
+        print(json.dumps(build(args.ingest, args.config, args.out), indent=2))
