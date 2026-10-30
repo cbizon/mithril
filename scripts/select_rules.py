@@ -19,8 +19,8 @@ def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--data", type=Path, default=Path("data/1.0.2"))
     p.add_argument("--mined", type=Path, required=True, help="directory holding scored.pkl")
-    p.add_argument("--recall-floor", type=float, required=True)
-    p.add_argument("--min-new", type=float, required=True, help="min new target pairs per rule, fraction of target")
+    p.add_argument("--recall-floor", type=float, default=0.01)
+    p.add_argument("--min-new", type=float, default=0.005, help="min new target pairs per rule, fraction of target")
     p.add_argument("--k", type=int, default=30)
     args = p.parse_args()
 
