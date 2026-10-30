@@ -229,17 +229,22 @@ def search(
     contexts: HopContexts | None = None,
     merge_equivalent: bool = True,
 ) -> SearchStats:
-    """Depth-first specialization search for ``n_hops`` in (1, 2).
+    """Depth-first specialization search for ``n_hops`` in (1, 2, 3).
 
-    A body is ``(h1,)`` or ``(h1, c1, h2)``: hops are effective bitsets in their class
-    context (``HopContexts``), ``c1`` is a class-lattice index. With
+    A body is ``(h1,)``, ``(h1, c1, h2)`` or ``(h1, c1, h2, c2, h3)``: hops are
+    effective bitsets in their class context (``HopContexts``), ``c`` are class-lattice
+    indices. 3-hop overlap counts simple (node-disjoint) paths only (``threehop``). With
     ``merge_equivalent``, 2-hop bodies with the same canonical key
     (``canonical_two_hop``) are evaluated and reported once, labelled with the most
     specific middle class seen; every raw state is still explored so nothing reachable
     only through an equivalent class is lost.
     """
-    assert n_hops in (1, 2), "3-hop search not implemented yet"
+    assert n_hops in (1, 2, 3)
     contexts = contexts or HopContexts(store, hops, classes)
+    if n_hops == 3:
+        from biolink_rules.threehop import ThreeHop
+
+        three = ThreeHop(store, classes.sets, subject_class, object_class, cache_gb)
     a, b = subject_class, object_class
     budget = int(cache_gb * 2**30)
     hop_m = Cache(store.hop_matrix, budget // 2)
@@ -249,7 +254,7 @@ def search(
     from_subject, to_object = contexts.endpoint_tables(a, b) if n_hops == 2 else ({}, {})
 
     def key_of(body):
-        if n_hops == 1 or not merge_equivalent:
+        if n_hops != 2 or not merge_equivalent:
             return body
         h1, c1, h2 = body
         return canonical_two_hop(h1, classes.sets[c1], h2, from_subject, to_object)
@@ -258,15 +263,20 @@ def search(
         result = gb.Matrix(bool, mask.nrows, mask.ncols)
         if n_hops == 1:
             result(mask.S) << hop_m(body[0])
-        else:
+        elif n_hops == 2:
             h1, c1, h2 = body
             result(mask.S) << hop_m(h1).mxm(hop2_m((c1, h2)), gb.semiring.any_pair)
+        else:
+            return three.overlap(body, mask)
         return result
 
     def children(body):
         if n_hops == 1:
             for h in contexts.children(body[0], a, b):
                 yield (h,)
+            return
+        if n_hops == 3:
+            yield from children_3(body)
             return
         h1, c1, h2 = body
         for h in contexts.children(h1, a, c1):
@@ -278,17 +288,41 @@ def search(
             if n1 and n2:
                 yield (n1, c, n2)
 
+    def children_3(body):
+        h1, c1, h2, c2, h3 = body
+        for h in contexts.children(h1, a, c1):
+            yield (h, c1, h2, c2, h3)
+        for h in contexts.children(h2, c1, c2):
+            yield (h1, c1, h, c2, h3)
+        for h in contexts.children(h3, c2, b):
+            yield (h1, c1, h2, c2, h)
+        for c in classes.children[c1]:
+            n1, n2 = h1 & contexts.mask(a, c), h2 & contexts.mask(c, c2)
+            if n1 and n2:
+                yield (n1, c, n2, c2, h3)
+        for c in classes.children[c2]:
+            n2, n3 = h2 & contexts.mask(c1, c), h3 & contexts.mask(c, b)
+            if n2 and n3:
+                yield (h1, c1, n2, c, n3)
+
     def name(body):
         if n_hops == 1:
             return contexts.label(body[0], a, b)
+        if n_hops == 3:
+            h1, c1, h2, c2, h3 = body
+            return (f"{contexts.label(h1, a, c1)} | {classes.label(c1)} | {contexts.label(h2, c1, c2)} | "
+                    f"{classes.label(c2)} | {contexts.label(h3, c2, b)}")
         h1, c1, h2 = body
         return f"{contexts.label(h1, a, c1)} | {classes.label(c1)} | {contexts.label(h2, c1, b)}"
 
     def specificity(body):
-        return 0 if n_hops == 1 else classes.sets[body[1]].bit_count()
+        return sum(classes.sets[c].bit_count() for c in body[1::2])
 
     if n_hops == 1:
         root = (hops.sets[hops.root] & contexts.mask(a, b),)
+    elif n_hops == 3:
+        c, r = classes.root, hops.sets[hops.root]
+        root = (r & contexts.mask(a, c), c, r & contexts.mask(c, c), c, r & contexts.mask(c, b))
     else:
         c = classes.root
         root = (hops.sets[hops.root] & contexts.mask(a, c), c, hops.sets[hops.root] & contexts.mask(c, b))
