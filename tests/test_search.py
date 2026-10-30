@@ -73,15 +73,15 @@ def test_search_supports_match_brute_force(world, n_hops):
     )
     assert target.nvals == len(target_pairs)
 
-    stats = search(store, hops, classes, target, n_hops, min_support=1, time_limit=600)
+    stats = search(store, hops, classes, target, chem, dopf, n_hops, min_support=1, time_limit=600)
     assert stats.complete
     assert stats.evaluated >= 10
-    for body, _, support, _ in stats.rows:
+    for body, _, _, support, _ in stats.rows:
         if n_hops == 1:
-            predicted = pairs_of(store, hops.sets[body[0]])
+            predicted = pairs_of(store, body[0])
         else:
             h1, c1, h2 = body
             mid = members(store, classes, c1)
-            first, second = pairs_of(store, hops.sets[h1]), pairs_of(store, hops.sets[h2])
+            first, second = pairs_of(store, h1), pairs_of(store, h2)
             predicted = {(a, d) for a, b in first if b in mid for b2, d in second if b2 == b}
         assert support == len(predicted & target_pairs), body

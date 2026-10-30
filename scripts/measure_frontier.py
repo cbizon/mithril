@@ -32,6 +32,7 @@ def main() -> None:
     p.add_argument("--hops", type=int, default=2)
     p.add_argument("--min-support", type=int, default=10)
     p.add_argument("--time-limit", type=float, default=3600)
+    p.add_argument("--cache-gb", type=float, default=4.0)
     p.add_argument("--out", type=Path, required=True)
     args = p.parse_args()
 
@@ -41,28 +42,24 @@ def main() -> None:
     hops = hop_lattice(atoms)
     store = Store.load(args.data / "build", args.data / "ingest")
     t_index = find(hops, args.target)
-    subject = store.class_vector(classes.sets[find(classes, args.subject_class)])
-    object_ = store.class_vector(classes.sets[find(classes, args.object_class)])
+    a, b = find(classes, args.subject_class), find(classes, args.object_class)
+    subject = store.class_vector(classes.sets[a])
+    object_ = store.class_vector(classes.sets[b])
     target = restrict(store.hop_matrix(hops.sets[t_index], target_only=True), rows=subject, cols=object_)
     print(f"setup {time.time() - t0:.1f}s; target pairs {target.nvals:,}", flush=True)
 
-    stats = search(store, hops, classes, target, args.hops, args.min_support, args.time_limit)
+    stats = search(store, hops, classes, target, a, b, args.hops, args.min_support, args.time_limit, args.cache_gb)
     print(f"evaluated {stats.evaluated:,} passed {stats.passed:,} in {stats.seconds:.1f}s "
           f"({stats.evaluated / max(stats.seconds, 1e-9):.1f} evals/s) complete={stats.complete}")
 
-    def name(body):
-        return " | ".join(
-            (classes if (len(body) == 3 and i == 1) else hops).label(c) for i, c in enumerate(body)
-        )
-
     with open(args.out, "w") as handle:
         handle.write("body\tsupport\tdepth\tparent\n")
-        for body, parent, support, depth in stats.rows:
-            handle.write(f"{name(body)}\t{support}\t{depth}\t{name(parent) if parent else ''}\n")
+        for _, body_name, parent_name, support, depth in stats.rows:
+            handle.write(f"{body_name}\t{support}\t{depth}\t{parent_name}\n")
 
-    supports = np.array([r[2] for r in stats.rows])
-    parents_support = {r[0]: r[2] for r in stats.rows}
-    parent_of = np.array([parents_support[r[1]] if r[1] else np.inf for r in stats.rows])
+    supports = np.array([r[3] for r in stats.rows])
+    support_of = {r[1]: r[3] for r in stats.rows}
+    parent_of = np.array([support_of[r[2]] if r[2] else np.inf for r in stats.rows])
     print("threshold  passing  evaluated(=children of passing)")
     for s in sorted({args.min_support, 20, 50, 100, 200, 500, 1000, 5000}):
         if s < args.min_support:
