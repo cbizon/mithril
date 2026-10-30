@@ -130,7 +130,7 @@ class HopContexts:
         self._atom, self._left, self._right = key // n_catsets**2, key // n_catsets % n_catsets, key % n_catsets
         self._member = [np.array([bits >> i & 1 for i in range(n_catsets)], dtype=bool) for bits in classes.sets]
         self._masks: dict[tuple[int, int], int] = {}
-        self._lattices: dict[tuple[int, int], tuple[Lattice, dict[int, int]]] = {}
+        self._lattices: dict[tuple[int, int, int], tuple[Lattice, dict[int, int]]] = {}
 
     def mask(self, left: int, right: int) -> int:
         """Atom-orientation bits with at least one edge from ``left`` to ``right``."""
@@ -146,19 +146,22 @@ class HopContexts:
             self._masks[left, right] = bits
         return self._masks[left, right]
 
-    def lattice(self, left: int, right: int) -> tuple[Lattice, dict[int, int]]:
-        """The context lattice and a bits -> node index map."""
-        if (left, right) not in self._lattices:
-            m = self.mask(left, right)
-            labels: dict[int, list[str]] = {}
-            for bits, names in zip(self.hops.sets, self.hops.labels):
-                if bits & m:
-                    labels.setdefault(bits & m, []).extend(names)
-            sets = list(labels)
-            children, root = hasse(sets) if sets else ([], 0)
-            lattice = Lattice(sets=sets, labels=[sorted(labels[b]) for b in sets], children=children, root=root)
-            self._lattices[left, right] = (lattice, {b: i for i, b in enumerate(sets)})
-        return self._lattices[left, right]
+    def _build(self, m: int) -> tuple[Lattice, dict[int, int]]:
+        labels: dict[int, list[str]] = {}
+        for bits, names in zip(self.hops.sets, self.hops.labels):
+            if bits & m:
+                labels.setdefault(bits & m, []).extend(names)
+        sets = list(labels)
+        children, root = hasse(sets) if sets else ([], 0)
+        lattice = Lattice(sets=sets, labels=[sorted(labels[b]) for b in sets], children=children, root=root)
+        return lattice, {b: i for i, b in enumerate(sets)}
+
+    def lattice(self, left: int, right: int, exclude: int = 0) -> tuple[Lattice, dict[int, int]]:
+        """The context lattice (optionally without the atom-orientations in ``exclude``)
+        and a bits -> node index map."""
+        if (left, right, exclude) not in self._lattices:
+            self._lattices[left, right, exclude] = self._build(self.mask(left, right) & ~exclude)
+        return self._lattices[left, right, exclude]
 
     def endpoint_tables(self, subject: int, object_: int) -> tuple[dict[int, int], dict[int, int]]:
         """Per atom-orientation bit: catsets reachable from ``subject`` / reaching ``object_``.
@@ -178,12 +181,12 @@ class HopContexts:
                     to_object[bit] = to_object.get(bit, 0) | (1 << l)
         return from_subject, to_object
 
-    def children(self, bits: int, left: int, right: int) -> list[int]:
-        lattice, index = self.lattice(left, right)
+    def children(self, bits: int, left: int, right: int, exclude: int = 0) -> list[int]:
+        lattice, index = self.lattice(left, right, exclude)
         return [lattice.sets[c] for c in lattice.children[index[bits]]]
 
-    def label(self, bits: int, left: int, right: int) -> str:
-        lattice, index = self.lattice(left, right)
+    def label(self, bits: int, left: int, right: int, exclude: int = 0) -> str:
+        lattice, index = self.lattice(left, right, exclude)
         return lattice.label(index[bits])
 
 

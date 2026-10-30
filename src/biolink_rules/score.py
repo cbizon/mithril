@@ -38,33 +38,59 @@ class Scored:
 
 
 class Scorer:
-    """Counts predictor support and overlap pair sets for 1- and 2-hop bodies."""
+    """Exact pair counts for rule bodies ``(direct, path)``.
+
+    ``direct`` is an atom-orientation bitset for an edge required directly between the
+    endpoints (0 = none); ``path`` is a 2- or 3-hop search body (``()`` = none). A body
+    predicts the endpoint pairs (a in subject class, d in object class) satisfying both.
+    """
 
     def __init__(self, problem: Problem, cache_gb: float = 8.0):
         p = self.problem = problem
         store, classes = p.store, p.classes
         self.subject_v = store.class_vector(classes.sets[p.subject_class])
         self.object_v = store.class_vector(classes.sets[p.object_class])
-        budget = int(cache_gb * 2**30) // 2
+        budget = int(cache_gb * 2**30) // 3
         self.first = Cache(lambda h: restrict(store.hop_matrix(h), rows=self.subject_v), budget)
         self.second = Cache(
             lambda key: restrict(store.hop_matrix(key[1]), rows=store.class_vector(classes.sets[key[0]]),
                                  cols=self.object_v),
             budget,
         )
+        self.direct = Cache(lambda d: restrict(store.hop_matrix(d), rows=self.subject_v, cols=self.object_v)
+                            .select("offdiag").new(), budget)
+        self._three = None
 
-    def support(self, body: tuple, cap: int) -> tuple[int, bool]:
-        """(distinct predicted pairs, capped?) -- stops counting once above ``cap``."""
-        if len(body) == 1:
-            m = restrict(self.first(body[0]), cols=self.object_v)
-            return m.nvals, False
-        h1, c1, h2 = body
+    def three(self):
+        if self._three is None:
+            from biolink_rules.threehop import ThreeHop
+
+            p = self.problem
+            self._three = ThreeHop(p.store, p.classes.sets, p.subject_class, p.object_class)
+        return self._three
+
+    def path_pairs(self, path: tuple, mask: gb.Matrix) -> gb.Matrix:
+        """Pairs of ``mask`` joined by the path (simple paths for 3 hops)."""
+        if len(path) == 5:
+            return self.three().overlap(path, mask)
+        h1, c1, h2 = path
+        result = gb.Matrix(bool, mask.nrows, mask.ncols)
+        result(mask.S) << self.first(h1).mxm(self.second((c1, h2)), gb.semiring.any_pair)
+        return result
+
+    def path_support(self, path: tuple, cap: int) -> tuple[int, bool]:
+        if len(path) == 5:
+            return self.three().support(path, cap)
+        h1, c1, h2 = path
         left, right = self.first(h1), self.second((c1, h2))
         rows = left.reduce_rowwise(gb.monoid.any).new().to_coo()[0]
         count, start, block = 0, 0, 512
         while start < len(rows):
             idx = rows[start:start + block]
-            product = left[idx, :].new().mxm(right, gb.semiring.any_pair).new()
+            # keep global row indices so the a == d diagonal is the true diagonal
+            product = gb.Matrix(bool, left.nrows, right.ncols)
+            product[idx, :] << left[idx, :].new().mxm(right, gb.semiring.any_pair)
+            product = product.select("offdiag").new()
             count += product.nvals
             if count > cap:
                 return count, True
@@ -75,15 +101,21 @@ class Scorer:
                 block = max(block // 2, 16)
         return count, False
 
+    def support(self, body: tuple, cap: int) -> tuple[int, bool]:
+        """(distinct predicted pairs, capped?) -- path-only counting stops above ``cap``."""
+        direct, path = body
+        if not path:
+            return self.direct(direct).nvals, False
+        if not direct:
+            return self.path_support(path, cap)
+        return self.path_pairs(path, self.direct(direct)).nvals, False
+
     def overlap_pairs(self, body: tuple) -> gb.Matrix:
-        target = self.problem.target
-        result = gb.Matrix(bool, target.nrows, target.ncols)
-        if len(body) == 1:
-            result(target.S) << self.first(body[0])
-        else:
-            h1, c1, h2 = body
-            result(target.S) << self.first(h1).mxm(self.second((c1, h2)), gb.semiring.any_pair)
-        return result
+        direct, path = body
+        mask = self.problem.target
+        if direct:
+            mask = mask.ewise_mult(self.direct(direct), gb.binary.pair).new()
+        return self.path_pairs(path, mask) if path else mask
 
 
 def greedy_rule_set(

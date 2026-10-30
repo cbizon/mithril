@@ -30,6 +30,7 @@ class Problem:
     object_class: int
     target: gb.Matrix
     target_label: str
+    target_bits: int  # atom-orientations matched by the target hop label
 
 
 def find(lattice: Lattice, label: str) -> int:
@@ -55,10 +56,12 @@ def load_problem(data_dir: Path, config_path: Path, target: str, subject_class: 
     )
     store = Store.load(data_dir / "build", data_dir / "ingest")
     a, b = find(classes, subject_class), find(classes, object_class)
+    target_bits = hops.sets[find(hops, target)]
     target_matrix = restrict(
-        store.hop_matrix(hops.sets[find(hops, target)], target_only=True),
+        store.hop_matrix(target_bits, target_only=True),
         rows=store.class_vector(classes.sets[a]),
         cols=store.class_vector(classes.sets[b]),
     )
     return Problem(store, hops, classes, HopContexts(store, hops, classes), a, b, target_matrix,
-                   f"{subject_class.removeprefix('biolink:')} {target} {object_class.removeprefix('biolink:')}")
+                   f"{subject_class.removeprefix('biolink:')} {target} {object_class.removeprefix('biolink:')}",
+                   target_bits)

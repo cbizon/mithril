@@ -1,4 +1,5 @@
-"""Mine 2-hop rules for one target: search above a recall floor, then exact metrics.
+"""Mine rules for one target: 1-hop (direct edge), path (2 or 3 hops) and direct-AND-path
+rules above a recall floor, with exact metrics.
 
 Writes (in --out-dir): scored.pkl (rules with bodies, for scripts/select_rules.py)
 and scored.tsv (human-readable, sorted by precision).
@@ -12,6 +13,7 @@ import sys
 import time
 from pathlib import Path
 
+from biolink_rules.conjunctive import mine_conjunctions, mine_one_hop
 from biolink_rules.problem import load_problem
 from biolink_rules.score import Scored, Scorer
 from biolink_rules.search import search
@@ -24,6 +26,8 @@ def main() -> None:
     p.add_argument("--target", required=True)
     p.add_argument("--subject-class", required=True)
     p.add_argument("--object-class", required=True)
+    p.add_argument("--hops", type=int, default=2, choices=(2, 3), help="path length")
+    p.add_argument("--no-conjunctions", action="store_true", help="skip direct-AND-path rules")
     p.add_argument("--search-floor", type=float, default=0.01, help="recall floor used to prune the search")
     p.add_argument("--min-precision", type=float, default=0.01, help="stop counting support below this precision")
     p.add_argument("--out-dir", type=Path, required=True)
@@ -37,7 +41,7 @@ def main() -> None:
 
     floor = int(args.search_floor * n_target)
     stats = search(problem.store, problem.hops, problem.classes, problem.target, problem.subject_class,
-                   problem.object_class, 2, floor, time_limit=6 * 3600, contexts=problem.contexts)
+                   problem.object_class, args.hops, floor, time_limit=24 * 3600, contexts=problem.contexts)
     survivors = [(body, name, sup) for body, name, _, sup, _ in stats.rows if sup >= floor]
     print(f"search: evaluated {stats.evaluated:,}, {len(survivors):,} clear {args.search_floor:.0%} recall "
           f"in {stats.seconds:.0f}s complete={stats.complete}", flush=True)
@@ -45,16 +49,27 @@ def main() -> None:
     scorer = Scorer(problem)
     scored: list[Scored] = []
     t1 = time.time()
-    for i, (body, name, overlap) in enumerate(survivors, 1):
+    for i, (path, name, overlap) in enumerate(survivors, 1):
+        body = (0, path)
         support, capped = scorer.support(body, cap=int(overlap / args.min_precision))
         scored.append(Scored(body, name, overlap, support, capped, n_target))
         if i % 1000 == 0:
             print(f"[{time.time() - t1:7.0f}s] scored {i:,}/{len(survivors):,}", file=sys.stderr, flush=True)
-    print(f"scored {len(scored):,} rules in {time.time() - t1:.0f}s", flush=True)
+    print(f"scored {len(scored):,} path rules in {time.time() - t1:.0f}s", flush=True)
+
+    t2 = time.time()
+    one_hop = mine_one_hop(problem, scorer, floor)
+    print(f"1-hop (direct) rules: {len(one_hop):,} in {time.time() - t2:.0f}s", flush=True)
+    conjunctions = []
+    if not args.no_conjunctions:
+        t3 = time.time()
+        conjunctions = mine_conjunctions(problem, scorer, scored, floor)
+        print(f"direct-AND-path rules: {len(conjunctions):,} in {time.time() - t3:.0f}s", flush=True)
+    scored = one_hop + scored + conjunctions
 
     meta = {"config": str(args.config), "target": args.target, "subject_class": args.subject_class, "object_class": args.object_class,
             "target_label": problem.target_label, "target_pairs": n_target, "search_floor": args.search_floor,
-            "min_precision": args.min_precision, "evaluated": stats.evaluated, "complete": stats.complete}
+            "min_precision": args.min_precision, "hops": args.hops, "evaluated": stats.evaluated, "complete": stats.complete}
     with open(args.out_dir / "scored.pkl", "wb") as handle:
         pickle.dump({"meta": meta, "rules": scored}, handle)
     with open(args.out_dir / "scored.tsv", "w") as handle:
