@@ -1,0 +1,4 @@
+# default.yaml without the middle-class vocabulary (for comparison runs).
+extends: default.yaml
+
+middle_class_exclusions: []

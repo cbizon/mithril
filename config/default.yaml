@@ -31,3 +31,30 @@ query_qualifiers:
     # - causal_mechanism_qualifier   # inhibition/agonism/...; off for now
   exact_value_fields:
     - qualified_predicate
+
+# Classes that may NOT be the class of an intermediate path node. Endpoint and target
+# classes are unaffected; the unconstrained "(any)" root always remains. Agreed list
+# (2026-10-30): mixins / abstract groupings and near-duplicates of a kept class.
+middle_class_exclusions:
+  # mixins / abstract groupings (node counts from 1.0.2)
+  - biolink:ChemicalEntityOrGeneOrGeneProduct   # 1,621,530
+  - biolink:OntologyClass                       # 1,607,712
+  - biolink:PhysicalEssenceOrOccurrent          # 1,548,858
+  - biolink:ChemicalEntityOrProteinOrPolypeptide # 1,483,169
+  - biolink:PhysicalEssence                     # 1,474,203
+  - biolink:ChemicalOrDrugOrTreatment           # 1,194,490 (same nodes as ChemicalEntity)
+  - biolink:ThingWithTaxon                      #   643,828
+  - biolink:MacromolecularMachineMixin          #   430,095
+  - biolink:GeneProductMixin                    #   288,876 (same nodes as Protein)
+  - biolink:GeneOrGeneProductOrGeneFamily       #   251,975
+  - biolink:GenomicEntity                       #   244,686
+  - biolink:Occurrent                           #    74,655
+  - biolink:SubjectOfInvestigation              #    35,648
+  - biolink:GeneGroupingMixin                   #     7,439 (same nodes as GeneFamily)
+  - biolink:ActivityAndBehavior                 #     5,024
+  - biolink:Entity                              #       204
+  # near-duplicates of a kept class (differ by a handful of nodes)
+  - biolink:MolecularEntity                     # 1,131,878 vs SmallMolecule 1,131,803
+  - biolink:Polypeptide                         #   288,883 vs Protein 288,876
+  - biolink:OrganismalEntity                    #    35,648 vs AnatomicalEntity 35,128
+  # kept on purpose: GeneOrGeneProduct (mixin, but a standard Translator query class)
