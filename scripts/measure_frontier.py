@@ -1,4 +1,4 @@
-"""Phase-1 measurement: how big is the support-pruned search frontier for one target?
+"""Measure the support-pruned search frontier for one target.
 
 Writes every evaluated body (with its support) to a TSV and prints frontier sizes at a
 range of support thresholds, derived from a single low-threshold run.
@@ -12,43 +12,34 @@ from pathlib import Path
 
 import numpy as np
 
-from biolink_rules.lattice import class_lattice, hop_lattice, read_atoms, read_category_sets
-from biolink_rules.search import Store, restrict, search
-
-
-def find(lattice, label):
-    matches = [i for i, labels in enumerate(lattice.labels) if label in labels]
-    if len(matches) != 1:
-        raise ValueError(f"{label!r} matches {len(matches)} lattice nodes")
-    return matches[0]
+from biolink_rules.problem import load_problem
+from biolink_rules.search import search
 
 
 def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--data", type=Path, default=Path("data/1.0.2"))
+    p.add_argument("--config", type=Path, default=Path("config/default.yaml"))
     p.add_argument("--target", required=True, help="hop label, e.g. 'treats>'")
     p.add_argument("--subject-class", required=True)
     p.add_argument("--object-class", required=True)
     p.add_argument("--hops", type=int, default=2)
-    p.add_argument("--min-support", type=int, default=10)
+    p.add_argument("--min-support", type=int, default=None)
+    p.add_argument("--recall-floor", type=float, default=None, help="alternative to --min-support")
     p.add_argument("--time-limit", type=float, default=3600)
     p.add_argument("--cache-gb", type=float, default=4.0)
     p.add_argument("--out", type=Path, required=True)
     args = p.parse_args()
 
     t0 = time.time()
-    classes = class_lattice(read_category_sets(args.data / "ingest/category_sets.tsv"))
-    atoms = read_atoms(args.data / "build/atoms.tsv")
-    hops = hop_lattice(atoms)
-    store = Store.load(args.data / "build", args.data / "ingest")
-    t_index = find(hops, args.target)
-    a, b = find(classes, args.subject_class), find(classes, args.object_class)
-    subject = store.class_vector(classes.sets[a])
-    object_ = store.class_vector(classes.sets[b])
-    target = restrict(store.hop_matrix(hops.sets[t_index], target_only=True), rows=subject, cols=object_)
-    print(f"setup {time.time() - t0:.1f}s; target pairs {target.nvals:,}", flush=True)
+    problem = load_problem(args.data, args.config, args.target, args.subject_class, args.object_class)
+    n_target = problem.target.nvals
+    min_support = args.min_support if args.min_support is not None else int(args.recall_floor * n_target)
+    print(f"setup {time.time() - t0:.1f}s; target pairs {n_target:,}; min support {min_support:,}", flush=True)
 
-    stats = search(store, hops, classes, target, a, b, args.hops, args.min_support, args.time_limit, args.cache_gb)
+    stats = search(problem.store, problem.hops, problem.classes, problem.target, problem.subject_class,
+                   problem.object_class, args.hops, min_support, args.time_limit, args.cache_gb,
+                   contexts=problem.contexts)
     print(f"evaluated {stats.evaluated:,} passed {stats.passed:,} in {stats.seconds:.1f}s "
           f"({stats.evaluated / max(stats.seconds, 1e-9):.1f} evals/s) complete={stats.complete}")
 
@@ -59,13 +50,9 @@ def main() -> None:
 
     supports = np.array([r[3] for r in stats.rows])
     support_of = {r[1]: r[3] for r in stats.rows}
-    parent_of = np.array([support_of[r[2]] if r[2] else np.inf for r in stats.rows])
+    parent_of = np.array([support_of.get(r[2], np.inf) if r[2] else np.inf for r in stats.rows])
     print("threshold  passing  evaluated(=children of passing)")
-    for s in sorted({args.min_support, 20, 50, 100, 200, 500, 1000, 5000}):
-        if s < args.min_support:
-            continue
-        # a body is evaluated at threshold s iff its (logged) parent passed s; exact only
-        # for the first-visit parent, so 'evaluated' is a close lower bound
+    for s in sorted({min_support, 2 * min_support, 5 * min_support, 10 * min_support}):
         print(f"{s:>9}  {int((supports >= s).sum()):>7,}  {int((parent_of >= s).sum()):>7,}")
 
 
