@@ -35,7 +35,13 @@ ATOM_FIELDS = ("predicate", *ATOM_QUALIFIER_FIELDS)
 
 
 def load_config(path: Path) -> dict:
-    return yaml.safe_load(path.read_text())
+    """Load a YAML config; ``extends: <file>`` (relative to this file) is loaded first
+    and overridden key by key."""
+    config = yaml.safe_load(path.read_text()) or {}
+    base = config.pop("extends", None)
+    if base is None:
+        return config
+    return {**load_config(path.parent / base), **config}
 
 
 def read_edge_types(path: Path) -> list[dict[str, str]]:

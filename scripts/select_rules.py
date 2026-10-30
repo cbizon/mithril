@@ -18,7 +18,6 @@ from biolink_rules.score import Scorer, greedy_rule_set
 def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--data", type=Path, default=Path("data/1.0.2"))
-    p.add_argument("--config", type=Path, default=Path("config/default.yaml"))
     p.add_argument("--mined", type=Path, required=True, help="directory holding scored.pkl")
     p.add_argument("--recall-floor", type=float, required=True)
     p.add_argument("--min-new", type=float, required=True, help="min new target pairs per rule, fraction of target")
@@ -28,7 +27,9 @@ def main() -> None:
     with open(args.mined / "scored.pkl", "rb") as handle:
         mined = pickle.load(handle)
     meta, rules = mined["meta"], mined["rules"]
-    problem = load_problem(args.data, args.config, meta["target"], meta["subject_class"], meta["object_class"])
+    # rebuild exactly the lattices used for mining (bodies reference their indices)
+    config = Path(meta.get("config", "config/default.yaml"))
+    problem = load_problem(args.data, config, meta["target"], meta["subject_class"], meta["object_class"])
     assert problem.target.nvals == meta["target_pairs"], "graph/config changed since mining"
     scorer = Scorer(problem)
 

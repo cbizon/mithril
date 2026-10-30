@@ -43,7 +43,11 @@ def load_problem(data_dir: Path, config_path: Path, target: str, subject_class: 
     """``target`` is a hop label such as ``'treats>'``; classes are Biolink CURIEs."""
     config = load_config(config_path)
     qualifiers = config.get("query_qualifiers") or {}
-    classes = class_lattice(read_category_sets(data_dir / "ingest/category_sets.tsv"))
+    excluded = set(config.get("middle_class_exclusions") or ())
+    for endpoint in (subject_class, object_class):
+        if endpoint in excluded:
+            raise ValueError(f"{endpoint} is a target endpoint but listed in middle_class_exclusions")
+    classes = class_lattice(read_category_sets(data_dir / "ingest/category_sets.tsv"), exclude=excluded)
     hops = hop_lattice(
         read_atoms(data_dir / "build/atoms.tsv"),
         fields=tuple(qualifiers.get("fields", DEFAULT_QUERY_QUALIFIER_FIELDS)),

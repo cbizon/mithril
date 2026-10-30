@@ -78,3 +78,10 @@ def test_unknown_exclusion_field_fails(tmp_path, built):
     config.write_text("target_record_exclusions:\n  - {agent: x}\n")
     with pytest.raises(ValueError, match="agent"):
         build(out.parent / "ingest", config, tmp_path / "bad")
+
+
+def test_config_extends(tmp_path):
+    from biolink_rules.build import load_config
+    (tmp_path / "base.yaml").write_text("a: 1\nb: [x]\n")
+    (tmp_path / "child.yaml").write_text("extends: base.yaml\nb: [y]\nc: 3\n")
+    assert load_config(tmp_path / "child.yaml") == {"a": 1, "b": ["y"], "c": 3}

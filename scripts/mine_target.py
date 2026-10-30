@@ -52,7 +52,7 @@ def main() -> None:
             print(f"[{time.time() - t1:7.0f}s] scored {i:,}/{len(survivors):,}", file=sys.stderr, flush=True)
     print(f"scored {len(scored):,} rules in {time.time() - t1:.0f}s", flush=True)
 
-    meta = {"target": args.target, "subject_class": args.subject_class, "object_class": args.object_class,
+    meta = {"config": str(args.config), "target": args.target, "subject_class": args.subject_class, "object_class": args.object_class,
             "target_label": problem.target_label, "target_pairs": n_target, "search_floor": args.search_floor,
             "min_precision": args.min_precision, "evaluated": stats.evaluated, "complete": stats.complete}
     with open(args.out_dir / "scored.pkl", "wb") as handle:
