@@ -119,23 +119,54 @@ def predicate_ancestors(predicate: str) -> frozenset[str]:
     return frozenset(toolkit().get_ancestors(predicate, formatted=True, mixin=True, reflexive=True))
 
 
-def qualifier_generalizations(atom: dict[str, str]) -> set[tuple[tuple[str, str], ...]]:
-    """Every constraint set (sorted (field, value) tuple) that the atom satisfies."""
+DEFAULT_QUERY_QUALIFIER_FIELDS = (
+    "qualified_predicate",
+    "object_direction_qualifier",
+    "object_aspect_qualifier",
+    "subject_form_or_variant_qualifier",
+    "object_form_or_variant_qualifier",
+)
+DEFAULT_EXACT_VALUE_FIELDS = ("qualified_predicate",)
+
+
+def qualifier_generalizations(
+    atom: dict[str, str],
+    fields=DEFAULT_QUERY_QUALIFIER_FIELDS,
+    exact_value_fields=DEFAULT_EXACT_VALUE_FIELDS,
+) -> set[tuple[tuple[str, str], ...]]:
+    """Constraint sets (sorted (field, value) tuples) to generate as labels from this atom.
+
+    Only ``fields`` are used. Values of ``exact_value_fields`` are taken as observed;
+    other values also generalize to their Biolink enum ancestors. This only decides
+    which labels exist -- what a label matches is decided by production semantics.
+    """
     options = []
-    for name in ATOM_QUALIFIER_FIELDS:
+    for name in fields:
         value = atom.get(name, "")
         if not value:
             continue
-        values = predicate_ancestors(value) if name == "qualified_predicate" else enum_value_ancestors(value)
+        values = {value} if name in exact_value_fields else enum_value_ancestors(value)
         options.append([None, *((name, v) for v in sorted(values))])
     return {tuple(sorted(c for c in combo if c)) for combo in product(*options)}
 
 
+SHORT_QUALIFIER_NAMES = {
+    "qualified_predicate": "qp",
+    "object_direction_qualifier": "dir",
+    "object_aspect_qualifier": "aspect",
+    "subject_direction_qualifier": "subj_dir",
+    "subject_aspect_qualifier": "subj_aspect",
+    "subject_form_or_variant_qualifier": "subj_form",
+    "object_form_or_variant_qualifier": "obj_form",
+    "causal_mechanism_qualifier": "mech",
+}
+
+
 def format_hop_label(predicate: str, constraints: tuple[tuple[str, str], ...], direction: str) -> str:
-    """e.g. ``affects[object_direction_qualifier=increased]>`` (``>`` F, ``<`` R)."""
+    """e.g. ``affects[dir=increased]>`` (``>`` forward, ``<`` reverse)."""
     name = predicate.removeprefix("biolink:")
     if constraints:
-        name += "[" + ",".join(f"{f}={v.removeprefix('biolink:')}" for f, v in constraints) + "]"
+        name += "[" + ",".join(f"{SHORT_QUALIFIER_NAMES[f]}={v.removeprefix('biolink:')}" for f, v in constraints) + "]"
     return name + (">" if direction == "F" else "<")
 
 
@@ -145,32 +176,31 @@ def flip(bits: int, n_atoms: int) -> int:
     return ((bits & even) << 1) | ((bits >> 1) & even)
 
 
-def hop_lattice(atoms: list[dict[str, str]]) -> Lattice:
+def hop_lattice(
+    atoms: list[dict[str, str]],
+    fields=DEFAULT_QUERY_QUALIFIER_FIELDS,
+    exact_value_fields=DEFAULT_EXACT_VALUE_FIELDS,
+) -> Lattice:
     """Lattice over all hop labels with a non-empty match set in this graph."""
-    gens = [qualifier_generalizations(a) for a in atoms]
+    gens = [qualifier_generalizations(a, fields, exact_value_fields) for a in atoms]
     query_predicates = set().union(*(predicate_ancestors(a["predicate"]) for a in atoms))
+    satisfying: dict[tuple, int] = {}  # constraint set -> bitmask over atoms (production semantics)
+    for constraints in set().union(*gens):
+        satisfying[constraints] = sum(
+            1 << i for i, a in enumerate(atoms) if qualifiers_match(("", constraints), a)
+        )
+
+    def spread(atom_mask: int, reverse: bool) -> int:
+        return sum(1 << (2 * i + reverse) for i in range(atom_mask.bit_length()) if atom_mask >> i & 1)
 
     labelled: dict[str, int] = {}
     for predicate in sorted(query_predicates):
         forward, reverse = expanded_predicates(predicate)
-        f_atoms = [i for i, a in enumerate(atoms) if forward is None or a["predicate"] in forward]
-        r_atoms = [i for i, a in enumerate(atoms) if forward is None or a["predicate"] in reverse]
-        constraint_sets = set().union(*(gens[i] for i in {*f_atoms, *r_atoms}))
-        for constraints in constraint_sets:
-            bits = 0
-            for i in f_atoms:
-                if constraints in gens[i]:
-                    bits |= 1 << (2 * i)
-            for i in r_atoms:
-                if constraints in gens[i]:
-                    bits |= 1 << (2 * i + 1)
+        f_mask = sum(1 << i for i, a in enumerate(atoms) if forward is None or a["predicate"] in forward)
+        r_mask = sum(1 << i for i, a in enumerate(atoms) if forward is None or a["predicate"] in reverse)
+        candidates = set().union(*(gens[i] for i in range((f_mask | r_mask).bit_length()) if (f_mask | r_mask) >> i & 1))
+        for constraints in candidates:
+            bits = spread(f_mask & satisfying[constraints], False) | spread(r_mask & satisfying[constraints], True)
             labelled[format_hop_label(predicate, constraints, "F")] = bits
             labelled[format_hop_label(predicate, constraints, "R")] = flip(bits, len(atoms))
     return collapse(labelled)
-
-
-def check_hop_semantics(atoms: list[dict[str, str]], sample: list[tuple[str, tuple]]) -> None:
-    """Cross-check generated constraint sets against ``semantics.qualifiers_match``."""
-    for predicate, constraints in sample:
-        for atom, gen in zip(atoms, (qualifier_generalizations(a) for a in atoms)):
-            assert (constraints in gen) == qualifiers_match((predicate, constraints), atom), (constraints, atom)

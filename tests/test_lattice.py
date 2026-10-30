@@ -48,8 +48,28 @@ def test_qualifier_generalizations_include_ancestors_and_absence():
     })
     assert () in gens
     assert (("object_aspect_qualifier", "abundance"),) in gens
-    assert (("object_aspect_qualifier", "activity_or_abundance"), ("qualified_predicate", "biolink:contributes_to")) in gens
+    assert (("object_aspect_qualifier", "activity_or_abundance"), ("qualified_predicate", "biolink:causes")) in gens
     assert (("object_aspect_qualifier", "activity"),) not in gens
+    # qualified_predicate is exact-valued: no ancestors such as contributes_to / related_to
+    assert not any(v != "biolink:causes" for c in gens for f, v in c if f == "qualified_predicate")
+
+
+def test_qualifier_generalizations_ignore_unlisted_fields():
+    gens = qualifier_generalizations({"predicate": "biolink:affects", "causal_mechanism_qualifier": "inhibition"})
+    assert gens == {()}
+
+
+def test_exact_valued_label_still_matches_descendants():
+    atoms = [
+        {"predicate": "biolink:associated_with", "qualified_predicate": "biolink:causes"},
+        {"predicate": "biolink:associated_with", "qualified_predicate": "biolink:contributes_to"},
+    ]
+    lattice = hop_lattice(atoms)
+    label = format_hop_label("biolink:associated_with", (("qualified_predicate", "biolink:contributes_to"),), "F")
+    node = node_with_label(lattice, label)
+    # production semantics: contributes_to also matches causes (forward and, symmetric, reverse)
+    assert lattice.sets[node] == 0b1111
+    assert not any("qp=related_to" in l for labels in lattice.labels for l in labels)
 
 
 def test_hop_lattice_structure():

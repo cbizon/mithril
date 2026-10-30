@@ -31,6 +31,7 @@ biolink-rules = "biolink_rules.cli:main"
 
 [tool.pytest.ini_options]
 addopts = "--doctest-modules"
+pythonpath = ["tests"]
 testpaths = ["tests", "src"]
 
 [tool.uv.sources]

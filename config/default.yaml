@@ -16,3 +16,18 @@ exclude_hop_predicates:
 target_record_exclusions:
   - {agent_type: text_mining_agent}
   - {negated: "true"}
+
+# Qualifiers that may appear in query (hop/target) labels. Values of exact_value_fields
+# are used only as observed in the data; other values also generalize to Biolink enum
+# ancestors (e.g. expression -> abundance -> activity_or_abundance). Matching always
+# follows production semantics, so a constraint still matches descendant values.
+query_qualifiers:
+  fields:
+    - qualified_predicate
+    - object_direction_qualifier
+    - object_aspect_qualifier
+    - subject_form_or_variant_qualifier
+    - object_form_or_variant_qualifier
+    # - causal_mechanism_qualifier   # inhibition/agonism/...; off for now
+  exact_value_fields:
+    - qualified_predicate
