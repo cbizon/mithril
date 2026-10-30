@@ -181,6 +181,17 @@ class HopContexts:
                     to_object[bit] = to_object.get(bit, 0) | (1 << l)
         return from_subject, to_object
 
+    def pair_table(self) -> dict[int, dict[int, int]]:
+        """Per atom-orientation bit: left catset -> bitmask of right catsets it links to."""
+        if not hasattr(self, "_pairs"):
+            table: dict[int, dict[int, int]] = {}
+            for atom, left, right in zip(self._atom.tolist(), self._left.tolist(), self._right.tolist()):
+                for bit, l, r in ((2 * atom, left, right), (2 * atom + 1, right, left)):
+                    row = table.setdefault(bit, {})
+                    row[l] = row.get(l, 0) | (1 << r)
+            self._pairs = table
+        return self._pairs
+
     def children(self, bits: int, left: int, right: int, exclude: int = 0) -> list[int]:
         lattice, index = self.lattice(left, right, exclude)
         return [lattice.sets[c] for c in lattice.children[index[bits]]]
@@ -218,6 +229,37 @@ def canonical_two_hop(h1: int, c_set: int, h2: int, from_subject: dict[int, int]
         h1, c_set, h2 = n1, middle, n2
 
 
+def canonical_three_hop(h1, c1_set, h2, c2_set, h3, from_subject, to_object, pairs):
+    """Canonical key of a 3-hop body (see ``canonical_two_hop``): middle catsets must lie
+    on a subject -> c1 -> c2 -> object chain at catset level; hops keep only atoms whose
+    edges touch the surviving catsets. Iterated to a fixpoint."""
+    while True:
+        reach = 0
+        for bit in set_bits(h1):
+            reach |= from_subject.get(bit, 0)
+        back = 0
+        for bit in set_bits(h3):
+            back |= to_object.get(bit, 0)
+        m1_cand, m2_cand = c1_set & reach, c2_set & back
+        m1 = 0
+        for bit in set_bits(h2):
+            for left, rights in pairs.get(bit, {}).items():
+                if m1_cand >> left & 1 and rights & m2_cand:
+                    m1 |= 1 << left
+        m2 = 0
+        for bit in set_bits(h2):
+            for left, rights in pairs.get(bit, {}).items():
+                if m1 >> left & 1:
+                    m2 |= rights & m2_cand
+        n1 = sum(1 << bit for bit in set_bits(h1) if from_subject.get(bit, 0) & m1)
+        n3 = sum(1 << bit for bit in set_bits(h3) if to_object.get(bit, 0) & m2)
+        n2 = sum(1 << bit for bit in set_bits(h2)
+                 if any(m1 >> left & 1 and rights & m2 for left, rights in pairs.get(bit, {}).items()))
+        if (n1, m1, n2, m2, n3) == (h1, c1_set, h2, c2_set, h3):
+            return h1, c1_set, h2, c2_set, h3
+        h1, c1_set, h2, c2_set, h3 = n1, m1, n2, m2, n3
+
+
 def search(
     store: Store,
     hops: Lattice,
@@ -237,8 +279,8 @@ def search(
     A body is ``(h1,)``, ``(h1, c1, h2)`` or ``(h1, c1, h2, c2, h3)``: hops are
     effective bitsets in their class context (``HopContexts``), ``c`` are class-lattice
     indices. 3-hop overlap counts simple (node-disjoint) paths only (``threehop``). With
-    ``merge_equivalent``, 2-hop bodies with the same canonical key
-    (``canonical_two_hop``) are evaluated and reported once, labelled with the most
+    ``merge_equivalent``, 2- and 3-hop bodies with the same canonical key
+    (``canonical_two_hop`` / ``canonical_three_hop``) are evaluated and reported once, labelled with the most
     specific middle class seen; every raw state is still explored so nothing reachable
     only through an equivalent class is lost.
     """
@@ -254,11 +296,15 @@ def search(
     class_v = Cache(lambda c: store.class_vector(classes.sets[c]), 2**28)
     # second hop with its rows restricted to the intermediate class
     hop2_m = Cache(lambda key: restrict(hop_m(key[1]), rows=class_v(key[0])), budget // 2)
-    from_subject, to_object = contexts.endpoint_tables(a, b) if n_hops == 2 else ({}, {})
+    from_subject, to_object = contexts.endpoint_tables(a, b) if n_hops > 1 else ({}, {})
+    pairs = contexts.pair_table() if n_hops == 3 else {}
 
     def key_of(body):
-        if n_hops != 2 or not merge_equivalent:
+        if n_hops == 1 or not merge_equivalent:
             return body
+        if n_hops == 3:
+            h1, c1, h2, c2, h3 = body
+            return canonical_three_hop(h1, classes.sets[c1], h2, classes.sets[c2], h3, from_subject, to_object, pairs)
         h1, c1, h2 = body
         return canonical_two_hop(h1, classes.sets[c1], h2, from_subject, to_object)
 

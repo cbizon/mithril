@@ -72,3 +72,18 @@ def test_non_simple_walks_are_excluded():
     diag_x, diag_y = ThreeHop.diagonals(a1, a2, a3)
     total(mask.S) << a1.mxm(a2, gb.semiring.plus_times).mxm(a3, gb.semiring.plus_times)
     assert ThreeHop.simple_counts(total, a1, a2, a3, diag_x, diag_y, mask).nvals == 1
+
+
+def test_three_hop_merging_is_exact_and_complete(setup):
+    store, hops, classes, chem, dopf, target, a_nodes, b_nodes, target_pairs = setup
+    raw = search(store, hops, classes, target, chem, dopf, 3, 2, 600, merge_equivalent=False)
+    merged = search(store, hops, classes, target, chem, dopf, 3, 2, 600)
+    assert merged.complete and merged.evaluated < raw.evaluated, (merged.evaluated, raw.evaluated)
+
+    def passing(stats):
+        return [frozenset(simple_predictions(store, classes, r[0], a_nodes, b_nodes)) for r in stats.rows if r[3] >= 2]
+
+    merged_sets = passing(merged)
+    assert set(passing(raw)) <= set(merged_sets)
+    for row in merged.rows:  # supports of merged representatives are still exact
+        assert row[3] == len(simple_predictions(store, classes, row[0], a_nodes, b_nodes) & target_pairs)
