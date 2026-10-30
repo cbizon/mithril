@@ -160,6 +160,24 @@ class HopContexts:
             self._lattices[left, right] = (lattice, {b: i for i, b in enumerate(sets)})
         return self._lattices[left, right]
 
+    def endpoint_tables(self, subject: int, object_: int) -> tuple[dict[int, int], dict[int, int]]:
+        """Per atom-orientation bit: catsets reachable from ``subject`` / reaching ``object_``.
+
+        ``from_subject[bit]`` is the catset bitmask of right-hand ends of the bit's edges
+        whose left end is in the subject class; ``to_object[bit]`` the left-hand ends of
+        edges whose right end is in the object class.
+        """
+        sm, om = self._member[subject], self._member[object_]
+        from_subject: dict[int, int] = {}
+        to_object: dict[int, int] = {}
+        for atom, left, right in zip(self._atom.tolist(), self._left.tolist(), self._right.tolist()):
+            for bit, l, r in ((2 * atom, left, right), (2 * atom + 1, right, left)):
+                if sm[l]:
+                    from_subject[bit] = from_subject.get(bit, 0) | (1 << r)
+                if om[r]:
+                    to_object[bit] = to_object.get(bit, 0) | (1 << l)
+        return from_subject, to_object
+
     def children(self, bits: int, left: int, right: int) -> list[int]:
         lattice, index = self.lattice(left, right)
         return [lattice.sets[c] for c in lattice.children[index[bits]]]
@@ -167,6 +185,34 @@ class HopContexts:
     def label(self, bits: int, left: int, right: int) -> str:
         lattice, index = self.lattice(left, right)
         return lattice.label(index[bits])
+
+
+def set_bits(bits: int):
+    while bits:
+        low = bits & -bits
+        yield low.bit_length() - 1
+        bits ^= low
+
+
+def canonical_two_hop(h1: int, c_set: int, h2: int, from_subject: dict[int, int], to_object: dict[int, int]):
+    """Canonical key of a 2-hop body: only middle catsets with a first-hop edge from the
+    subject class AND a second-hop edge to the object class matter, and only hop atoms
+    touching those catsets. Iterated to a fixpoint. Bodies with equal keys have
+    identical predicted pair sets.
+    """
+    while True:
+        reach = 0
+        for bit in set_bits(h1):
+            reach |= from_subject.get(bit, 0)
+        back = 0
+        for bit in set_bits(h2):
+            back |= to_object.get(bit, 0)
+        middle = c_set & reach & back
+        n1 = sum(1 << bit for bit in set_bits(h1) if from_subject.get(bit, 0) & middle)
+        n2 = sum(1 << bit for bit in set_bits(h2) if to_object.get(bit, 0) & middle)
+        if (n1, middle, n2) == (h1, c_set, h2):
+            return h1, c_set, h2
+        h1, c_set, h2 = n1, middle, n2
 
 
 def search(
@@ -181,11 +227,16 @@ def search(
     time_limit: float,
     cache_gb: float = 4.0,
     contexts: HopContexts | None = None,
+    merge_equivalent: bool = True,
 ) -> SearchStats:
     """Depth-first specialization search for ``n_hops`` in (1, 2).
 
     A body is ``(h1,)`` or ``(h1, c1, h2)``: hops are effective bitsets in their class
-    context (``HopContexts``), ``c1`` is a class-lattice index.
+    context (``HopContexts``), ``c1`` is a class-lattice index. With
+    ``merge_equivalent``, 2-hop bodies with the same canonical key
+    (``canonical_two_hop``) are evaluated and reported once, labelled with the most
+    specific middle class seen; every raw state is still explored so nothing reachable
+    only through an equivalent class is lost.
     """
     assert n_hops in (1, 2), "3-hop search not implemented yet"
     contexts = contexts or HopContexts(store, hops, classes)
@@ -195,6 +246,13 @@ def search(
     class_v = Cache(lambda c: store.class_vector(classes.sets[c]), 2**28)
     # second hop with its rows restricted to the intermediate class
     hop2_m = Cache(lambda key: restrict(hop_m(key[1]), rows=class_v(key[0])), budget // 2)
+    from_subject, to_object = contexts.endpoint_tables(a, b) if n_hops == 2 else ({}, {})
+
+    def key_of(body):
+        if n_hops == 1 or not merge_equivalent:
+            return body
+        h1, c1, h2 = body
+        return canonical_two_hop(h1, classes.sets[c1], h2, from_subject, to_object)
 
     def overlap(body, mask):
         result = gb.Matrix(bool, mask.nrows, mask.ncols)
@@ -226,6 +284,9 @@ def search(
         h1, c1, h2 = body
         return f"{contexts.label(h1, a, c1)} | {classes.label(c1)} | {contexts.label(h2, c1, b)}"
 
+    def specificity(body):
+        return 0 if n_hops == 1 else classes.sets[body[1]].bit_count()
+
     if n_hops == 1:
         root = (hops.sets[hops.root] & contexts.mask(a, b),)
     else:
@@ -233,23 +294,35 @@ def search(
         root = (hops.sets[hops.root] & contexts.mask(a, c), c, hops.sets[hops.root] & contexts.mask(c, b))
     stats = SearchStats()
     start = time.time()
-    visited = {root}
     root_overlap = overlap(root, target)
     stats.evaluated = 1
     stats.rows.append((root, name(root), "", root_overlap.nvals, 0))
+    row_of = {key_of(root): 0}  # canonical key -> index in stats.rows
     if root_overlap.nvals < min_support:
         return stats
     stats.passed = 1
+    explored = {root}
     stack = [(root, root_overlap, 0)]
     while stack and time.time() - start < time_limit:
         body, mask, depth = stack.pop()
         for child in children(body):
-            if child in visited:
+            if child in explored:
                 continue
-            visited.add(child)
+            explored.add(child)
+            key = key_of(child)
+            if key in row_of:
+                row = row_of[key]
+                support = stats.rows[row][3]
+                if specificity(child) < specificity(stats.rows[row][0]):
+                    _, _, parent_name, _, d = stats.rows[row]
+                    stats.rows[row] = (child, name(child), parent_name, support, d)
+                if support >= min_support:
+                    stack.append((child, mask, depth + 1))  # parent's overlap is a valid superset mask
+                continue
             child_overlap = overlap(child, mask)
             stats.evaluated += 1
             support = child_overlap.nvals
+            row_of[key] = len(stats.rows)
             stats.rows.append((child, name(child), name(body), support, depth + 1))
             if support >= min_support:
                 stats.passed += 1
@@ -257,7 +330,8 @@ def search(
             if stats.evaluated % 1000 == 0:
                 elapsed = time.time() - start
                 print(f"[{elapsed:8.0f}s] evaluated {stats.evaluated:,} passed {stats.passed:,} "
-                      f"stack {len(stack):,} ({stats.evaluated / elapsed:.1f}/s)", file=sys.stderr, flush=True)
+                      f"stack {len(stack):,} explored {len(explored):,} ({stats.evaluated / elapsed:.1f}/s)",
+                      file=sys.stderr, flush=True)
     stats.seconds = time.time() - start
     stats.complete = not stack
     return stats
