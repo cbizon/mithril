@@ -41,12 +41,19 @@ def ordered_tree(setup, n_hops, min_support):
     return evaluated, passed, bodies
 
 
-@pytest.mark.parametrize("n_hops,min_support", [(2, 1), (3, 2)])
-def test_estimate_is_unbiased_for_ordered_tree(setup, n_hops, min_support):
+@pytest.mark.parametrize("n_hops,min_support,bias,memo_depth", [
+    (2, 1, 0.0, -1),  # plain Knuth
+    (3, 2, 0.0, -1),
+    (2, 1, 1.0, -1),  # overlap-biased
+    (3, 2, 2.0, -1),
+    (3, 2, 0.0, 3),  # adaptive
+    (3, 2, 2.0, 50),
+])
+def test_estimate_is_unbiased_for_ordered_tree(setup, n_hops, min_support, bias, memo_depth):
     store, hops, classes, chem, dopf, target = setup
     evaluated, passed, _ = ordered_tree(setup, n_hops, min_support)
     probes = estimate_size(store, hops, classes, target, chem, dopf, n_hops, min_support, probes=3000, seed=1,
-                           cache_gb=0.1)
+                           cache_gb=0.1, bias=bias, memo_depth=memo_depth)
     for field, exact in (("evaluated", evaluated), ("passed", passed)):
         totals = [sum(p[field].values()) for p in probes]
         assert abs(statistics.mean(totals) - exact) < 3 * statistics.stdev(totals) / len(totals) ** 0.5, field

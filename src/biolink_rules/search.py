@@ -451,15 +451,32 @@ def estimate_size(
     contexts: HopContexts | None = None,
     time_limit: float = float("inf"),
     progress=None,
+    bias: float = 0.0,
+    mix: float = 0.1,
+    memo_depth: int = 1,
 ) -> list[dict]:
     """Knuth random-probe estimate of the support-pruned search size, one dict per probe.
 
     Each probe walks from the root, refining in non-decreasing coordinate order (so a
     body is reached by about one route rather than one per refinement ordering), and
-    picks a uniformly random passing child at each step. With ``w`` the product of the
-    passing-child counts so far, a step that evaluates ``k`` children of which ``p``
+    picks a random passing child at each step. With ``w`` the product of the inverse
+    selection probabilities so far, a step that evaluates ``k`` children of which ``p``
     pass adds ``w*k`` evaluated and ``w*p`` passing bodies at the next depth; the mean
-    over probes is an unbiased estimate for the coordinate-ordered tree. That tree
+    over probes is an unbiased estimate for the coordinate-ordered tree.
+
+    ``bias=0`` picks children uniformly (Knuth's estimator). The tree is very unbalanced
+    (huge subtrees under a few broad bodies), which makes uniform probes rarely reach
+    the bulk of it and the estimate heavy-tailed. ``bias>0`` importance-samples: child
+    ``i`` with target overlap ``s_i`` is picked with probability
+    ``(1-mix) * s_i**bias / sum(s**bias) + mix / p``; still unbiased, since every child
+    keeps a positive probability and is reweighted by its inverse.
+
+    At bodies of depth <= ``memo_depth`` the expansion is cached and the selection is
+    *adaptive*: each probe records the size of the subtree it entered (its own
+    estimate below that child), and later probes pick children in proportion to the
+    mean recorded size (unvisited children get the largest mean seen so far, which
+    encourages exploring them), mixed with ``mix`` uniform. Probabilities depend only on
+    earlier probes, so each probe stays unbiased given the history. That tree
     still repeats bodies reachable through several class or hop parents, so it
     overestimates the deduplicated search somewhat.
 
@@ -474,7 +491,16 @@ def estimate_size(
     root_overlap = overlap(root, target)
     if root_overlap.nvals < min_support:
         return []
-    top: dict[tuple, tuple[int, list]] = {}  # root and its children: (#children, passing [(coord, body, overlap)])
+    # bodies at depth <= memo_depth: (#children, passing [(coord, body, overlap)], heuristic
+    # probabilities, per-child [sum of recorded subtree sizes, count])
+    top: dict[tuple, tuple[int, list, np.ndarray, np.ndarray]] = {}
+
+    def learned(prob, record):
+        seen = record[:, 1] > 0
+        if not seen.any():
+            return prob
+        size = np.where(seen, record[:, 0] / np.maximum(record[:, 1], 1), (record[seen, 0] / record[seen, 1]).max())
+        return (1 - mix) * size / size.sum() + mix / len(size)
 
     def expand(body, mask, last):
         kids = [(coord, child) for coord, child in children(body) if coord >= last]
@@ -483,7 +509,12 @@ def estimate_size(
             child_overlap = overlap(child, mask)
             if child_overlap.nvals >= min_support:
                 passing.append((coord, child, child_overlap))
-        return len(kids), passing
+        if not passing:
+            return len(kids), passing, np.zeros(0)
+        if bias == 0:
+            return len(kids), passing, np.full(len(passing), 1 / len(passing))
+        score = np.array([o.nvals for _, _, o in passing], dtype=float) ** bias
+        return len(kids), passing, (1 - mix) * score / score.sum() + mix / len(passing)
 
     results = []
     deadline = time.time() + time_limit
@@ -493,24 +524,40 @@ def estimate_size(
         passed: dict[int, float] = {}
         by_classes: dict[tuple, float] = {}
         body, mask, last, depth, weight, done = root, root_overlap, 0, 0, 1.0, 0
+        steps = []  # (weight, children evaluated, memo record or None, picked index)
         while True:
             key = (body, last)
-            if depth <= 1 and key in top:
-                n_kids, passing = top[key]
+            record = None
+            if depth <= memo_depth:
+                if key not in top:
+                    n_kids, passing, prob = expand(body, mask, last)
+                    done += n_kids
+                    top[key] = (n_kids, passing, prob, np.zeros((len(passing), 2)))
+                n_kids, passing, prob, record = top[key]
+                prob = learned(prob, record)
             else:
-                n_kids, passing = expand(body, mask, last)
+                n_kids, passing, prob = expand(body, mask, last)
                 done += n_kids
-                if depth <= 1:
-                    top[key] = (n_kids, passing)
             evaluated[depth + 1] = evaluated.get(depth + 1, 0.0) + weight * n_kids
             passed[depth + 1] = passed.get(depth + 1, 0.0) + weight * len(passing)
             middle = body[1::2]
             by_classes[middle] = by_classes.get(middle, 0.0) + weight * n_kids
             if not passing:
+                steps.append((weight, n_kids, None, -1))
                 break
-            last, body, mask = passing[rng.integers(len(passing))]
-            weight *= len(passing)
+            pick = rng.choice(len(passing), p=prob)
+            steps.append((weight, n_kids, record, pick))
+            last, body, mask = passing[pick]
+            weight /= prob[pick]
             depth += 1
+        # subtree size entered at step j = 1 + (estimated evaluations from step j+1 on) / weight there
+        below = 0.0
+        for j in range(len(steps) - 1, -1, -1):
+            w, n_kids, record, pick = steps[j]
+            if record is not None:
+                child_weight = steps[j + 1][0]
+                record[pick] += (1 + below / child_weight, 1)
+            below += w * n_kids
         results.append({"evaluated": evaluated, "passed": passed, "by_classes": by_classes,
                         "seconds": time.time() - start, "evaluations": done})
         if progress:

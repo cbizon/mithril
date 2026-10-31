@@ -31,8 +31,8 @@ def probe(args) -> None:
     probes = estimate_size(problem.store, problem.hops, problem.classes, problem.target, problem.subject_class,
                            problem.object_class, args.hops, min_support, probes=args.probes, seed=args.seed,
                            cache_gb=args.cache_gb, contexts=problem.contexts, time_limit=args.time_limit,
-                           progress=report)
-    meta = {"target_label": problem.target_label, "hops": args.hops, "min_support": min_support,
+                           progress=report, bias=args.bias, memo_depth=args.memo_depth)
+    meta = {"target_label": problem.target_label, "hops": args.hops, "min_support": min_support, "bias": args.bias,
             "class_labels": problem.classes.labels}
     with open(args.out, "wb") as handle:
         pickle.dump({"meta": meta, "probes": probes}, handle)
@@ -50,7 +50,7 @@ def summarize(args) -> None:
 
     def mean_se(values):
         values = list(values)
-        return statistics.mean(values), statistics.stdev(values) / n**0.5 if n > 1 else float("nan")
+        return statistics.mean(values), statistics.stdev(values) / len(values)**0.5 if len(values) > 1 else float("nan")
 
     labels = meta["class_labels"]
     lines = [f"# {meta['target_label']}: {meta['hops']}-hop search size, min support {meta['min_support']:,}",
@@ -62,12 +62,13 @@ def summarize(args) -> None:
         lines.append(f"| {d} | {e:.3g} | {q:.3g} |")
     total, total_se = mean_se(sum(p["evaluated"].values()) for p in probes)
     passing, passing_se = mean_se(sum(p["passed"].values()) for p in probes)
-    rate = sum(p["evaluations"] for p in probes) / sum(p["seconds"] for p in probes)
-    hours = total / rate / 3600
+    # later probes have learned selection probabilities (lower variance); every probe is unbiased
+    late, late_se = mean_se(sum(p["evaluated"].values()) for p in probes[len(probes) // 2:])
+    hours = total / args.eval_rate / 3600
     lines += ["", f"Estimated evaluations {total:.3g} (SE {total_se:.2g}); passing bodies {passing:.3g} "
-              f"(SE {passing_se:.2g}).",
-              f"Probe evaluation rate {rate:.1f}/s -> {hours:.3g} single-job hours "
-              f"({hours / 24:.3g} days).",
+              f"(SE {passing_se:.2g}). Later half of probes alone: {late:.3g} (SE {late_se:.2g}).",
+              f"At {args.eval_rate:g} evaluations/s (full-search rate; probes are slower because they "
+              f"evaluate mostly broad bodies): {hours:.3g} single-job hours ({hours / 24:.3g} days).",
               "", "Largest middle-class partitions (share of estimated evaluations):", "",
               "| middle classes | evaluated | share |", "|---|---|---|"]
     by_classes: dict[tuple, float] = {}
@@ -94,14 +95,18 @@ def main() -> None:
     pr.add_argument("--object-class", required=True)
     pr.add_argument("--hops", type=int, default=3)
     pr.add_argument("--recall-floor", type=float, default=0.02)
-    pr.add_argument("--probes", type=int, default=100)
+    pr.add_argument("--probes", type=int, default=100_000)
     pr.add_argument("--seed", type=int, default=0)
     pr.add_argument("--time-limit", type=float, default=3 * 3600)
     pr.add_argument("--cache-gb", type=float, default=24.0)
+    pr.add_argument("--bias", type=float, default=0.0, help="importance-sampling exponent on overlap (0 = uniform)")
+    pr.add_argument("--memo-depth", type=int, default=3, help="cache expansions of bodies up to this depth")
     pr.add_argument("--out", type=Path, required=True)
     su = sub.add_parser("summarize")
     su.add_argument("pickles", type=Path, nargs="+")
     su.add_argument("--top", type=int, default=20)
+    su.add_argument("--eval-rate", type=float, default=31.0,
+                    help="evaluations/s of the full search (treats 3-hop 4 h runs: 31-33)")
     su.add_argument("--out", type=Path)
     args = p.parse_args()
     probe(args) if args.command == "probe" else summarize(args)
