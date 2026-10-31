@@ -69,7 +69,8 @@ def main() -> None:
 
     meta = {"config": str(args.config), "target": args.target, "subject_class": args.subject_class, "object_class": args.object_class,
             "target_label": problem.target_label, "target_pairs": n_target, "search_floor": args.search_floor,
-            "min_precision": args.min_precision, "hops": args.hops, "evaluated": stats.evaluated, "complete": stats.complete}
+            "min_precision": args.min_precision, "hops": args.hops, "evaluated": stats.evaluated, "complete": stats.complete,
+            "class_labels": problem.classes.labels}
     with open(args.out_dir / "scored.pkl", "wb") as handle:
         pickle.dump({"meta": meta, "rules": scored}, handle)
     with open(args.out_dir / "scored.tsv", "w") as handle:

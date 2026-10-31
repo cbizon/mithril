@@ -61,12 +61,17 @@ def hasse(sets: list[int]) -> tuple[list[list[int]], int]:
 
 
 def collapse(labelled: dict[str, int]) -> Lattice:
-    """Group labels by set, drop the empty set, and build the Hasse diagram."""
+    """Group labels by set, drop the empty set, and build the Hasse diagram.
+
+    Node order depends only on the sets (largest first), never on ``labelled``'s
+    insertion order: mined rule bodies store node indices, which must mean the same
+    class in every process.
+    """
     by_set: dict[int, list[str]] = {}
     for name, bits in labelled.items():
         if bits:
             by_set.setdefault(bits, []).append(name)
-    sets = list(by_set)
+    sets = sorted(by_set, key=lambda bits: (-bits.bit_count(), bits))
     children, root = hasse(sets)
     return Lattice(sets=sets, labels=[sorted(by_set[s]) for s in sets], children=children, root=root)
 

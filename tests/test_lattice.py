@@ -91,3 +91,14 @@ def test_hop_lattice_structure():
         lattice, format_hop_label("biolink:affects", (("object_direction_qualifier", "increased"),), "R")
     )
     assert lattice.sets[affects_up] == 1 << (2 * 2 + 1)
+
+
+def test_lattice_order_is_independent_of_insertion_order():
+    from biolink_rules.lattice import collapse
+
+    labelled = {"a": 0b111, "b": 0b011, "c": 0b001, "d": 0b100, "e": 0b011}
+    forward = collapse(labelled)
+    backward = collapse(dict(reversed(labelled.items())))
+    assert forward.sets == backward.sets
+    assert forward.labels == backward.labels
+    assert forward.children == backward.children

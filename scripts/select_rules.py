@@ -47,6 +47,7 @@ def main() -> None:
     config = Path(meta.get("config", "config/default.yaml"))
     problem = load_problem(args.data, config, meta["target"], meta["subject_class"], meta["object_class"])
     assert problem.target.nvals == meta["target_pairs"], "graph/config changed since mining"
+    assert problem.classes.labels == meta["class_labels"], "class lattice differs from mining; re-mine"
     scorer = Scorer(problem)
 
     usable = [r for r in rules if not r.capped]
