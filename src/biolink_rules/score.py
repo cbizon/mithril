@@ -118,11 +118,23 @@ class Scorer:
         return self.path_pairs(path, mask) if path else mask
 
 
+def is_conditioned(rule: Scored) -> bool:
+    """True for rules requiring a direct edge between the endpoints (1-hop or direct AND path).
+
+    These only rank pairs that already carry a related edge, so they are selected and
+    judged separately from path-only (discovery) rules.
+    """
+    return rule.body[0] != 0
+
+
 def greedy_rule_set(
-    scorer: Scorer, candidates: list[Scored], k: int, min_new_fraction: float
+    scorer: Scorer, candidates: list[Scored], k: int, min_new_fraction: float = 0.0, min_novel: float = 0.0
 ) -> list[tuple[Scored, int, float]]:
     """Scan candidates by precision; keep a rule if it adds enough new target pairs.
 
+    ``min_new_fraction`` is relative to the whole target (discovery sets);
+    ``min_novel`` is relative to the rule's own overlap, i.e. a redundancy limit that
+    says nothing about recall (conditioned sets).
     Returns (rule, new pairs added, cumulative union recall) for up to ``k`` rules.
     """
     target_count = scorer.problem.target.nvals
@@ -132,7 +144,7 @@ def greedy_rule_set(
     for rule in sorted(candidates, key=lambda r: (-r.precision, -r.overlap)):
         pairs = scorer.overlap_pairs(rule.body)
         new = pairs.nvals - pairs.ewise_mult(covered, gb.binary.pair).new().nvals
-        if new < min_new:
+        if new < min_new or new < min_novel * pairs.nvals:
             continue
         covered = covered.ewise_add(pairs, gb.binary.pair).new()
         chosen.append((rule, new, covered.nvals / target_count))

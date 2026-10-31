@@ -72,3 +72,27 @@ def test_direct_and_conjunctive_rules_match_brute_force(world):
                 for b2, d in pairs_of(store, h2) if b2 == b and d in b_nodes}
         predicted = path & direct_pairs(bits)
         assert (rule.support, rule.overlap) == (len(predicted), len(predicted & target_pairs)), rule.name
+
+
+def test_greedy_novelty_rejects_redundant_rules(world):
+    from biolink_rules.score import Scored, greedy_rule_set
+
+    store, hops, classes = world
+    (treats,) = [i for i, labels in enumerate(hops.labels) if "treats>" in labels]
+    (chem,) = [i for i, labels in enumerate(classes.labels) if "biolink:ChemicalEntity" in labels]
+    (dopf,) = [i for i, labels in enumerate(classes.labels) if "biolink:DiseaseOrPhenotypicFeature" in labels]
+    target = restrict(store.hop_matrix(hops.sets[treats], target_only=True),
+                      rows=store.class_vector(classes.sets[chem]), cols=store.class_vector(classes.sets[dopf]))
+    problem = Problem(store, hops, classes, HopContexts(store, hops, classes), chem, dopf, target, "t",
+                      hops.sets[treats])
+    scorer = Scorer(problem, cache_gb=0.1)
+    stats = search(store, hops, classes, target, chem, dopf, 2, min_support=1, time_limit=600)
+    body = (0, stats.rows[0][0])
+    overlap = scorer.overlap_pairs(body).nvals
+    rule = Scored(body, "r", overlap, overlap * 2, False, target.nvals)
+    twin = Scored(body, "twin", overlap, overlap * 2, False, target.nvals)
+    # an exact duplicate adds 0 new pairs: kept with no thresholds, dropped by novelty
+    assert len(greedy_rule_set(scorer, [rule, twin], k=5)) == 2
+    chosen = greedy_rule_set(scorer, [rule, twin], k=5, min_novel=0.5)
+    assert [c[0].name for c in chosen] == ["r"]
+    assert chosen[0][1:] == (overlap, overlap / target.nvals)
