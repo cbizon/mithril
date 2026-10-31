@@ -1,7 +1,8 @@
-"""Target-centric top-down rule search (1 and 2 hops; 3 hops TODO).
+"""Target-centric top-down rule search (1, 2 and 3 hops).
 
-A rule body for a target (A -T-> B) is a chain A -h1- c1 -h2- B where each ``h`` is a
-hop-lattice node and each intermediate ``c`` a class-lattice node. The search starts at
+A rule body for a target (A -T-> B) is a chain A -h1- c1 -h2- B (or A -h1- c1 -h2- c2
+-h3- B) where each ``h`` is a hop-lattice node and each intermediate ``c`` a
+class-lattice node. The search starts at
 the most general body and specializes one coordinate at a time. Overlap with the target
 pair set is anti-monotone under specialization, so bodies below ``min_support`` are
 pruned together with all their specializations. Each child's overlap is computed with
@@ -260,32 +261,19 @@ def canonical_three_hop(h1, c1_set, h2, c2_set, h3, from_subject, to_object, pai
         h1, c1_set, h2, c2_set, h3 = n1, m1, n2, m2, n3
 
 
-def search(
-    store: Store,
-    hops: Lattice,
-    classes: Lattice,
-    target: gb.Matrix,
-    subject_class: int,
-    object_class: int,
-    n_hops: int,
-    min_support: int,
-    time_limit: float,
-    cache_gb: float = 4.0,
-    contexts: HopContexts | None = None,
-    merge_equivalent: bool = True,
-) -> SearchStats:
-    """Depth-first specialization search for ``n_hops`` in (1, 2, 3).
+def body_space(store: Store, hops: Lattice, classes: Lattice, subject_class: int, object_class: int,
+               n_hops: int, cache_gb: float, contexts: HopContexts):
+    """The specialization space for ``n_hops`` in (1, 2, 3): ``(root, children, overlap, name)``.
 
-    A body is ``(h1,)``, ``(h1, c1, h2)`` or ``(h1, c1, h2, c2, h3)``: hops are
-    effective bitsets in their class context (``HopContexts``), ``c`` are class-lattice
-    indices. 3-hop overlap counts simple (node-disjoint) paths only (``threehop``). With
-    ``merge_equivalent``, 2- and 3-hop bodies with the same canonical key
-    (``canonical_two_hop`` / ``canonical_three_hop``) are evaluated and reported once, labelled with the most
-    specific middle class seen; every raw state is still explored so nothing reachable
-    only through an equivalent class is lost.
+    A body is ``(h1,)``, ``(h1, c1, h2)`` or ``(h1, c1, h2, c2, h3)``: hops are effective
+    bitsets in their class context (``HopContexts``), ``c`` are class-lattice indices.
+    ``children(body)`` yields ``(coordinate, child)``; coordinates number the refinable
+    positions classes first (3 hops: c1=0, c2=1, h1=2, h2=3, h3=4; 2 hops: c1=0, h1=1,
+    h2=2), so refining in non-decreasing coordinate order reaches every body.
+    ``overlap(body, mask)`` is the boolean matrix of ``mask`` pairs the body joins (simple
+    paths for 3 hops).
     """
     assert n_hops in (1, 2, 3)
-    contexts = contexts or HopContexts(store, hops, classes)
     if n_hops == 3:
         from biolink_rules.threehop import ThreeHop
 
@@ -296,17 +284,6 @@ def search(
     class_v = Cache(lambda c: store.class_vector(classes.sets[c]), 2**28)
     # second hop with its rows restricted to the intermediate class
     hop2_m = Cache(lambda key: restrict(hop_m(key[1]), rows=class_v(key[0])), budget // 2)
-    from_subject, to_object = contexts.endpoint_tables(a, b) if n_hops > 1 else ({}, {})
-    pairs = contexts.pair_table() if n_hops == 3 else {}
-
-    def key_of(body):
-        if n_hops == 1 or not merge_equivalent:
-            return body
-        if n_hops == 3:
-            h1, c1, h2, c2, h3 = body
-            return canonical_three_hop(h1, classes.sets[c1], h2, classes.sets[c2], h3, from_subject, to_object, pairs)
-        h1, c1, h2 = body
-        return canonical_two_hop(h1, classes.sets[c1], h2, from_subject, to_object)
 
     def overlap(body, mask):
         result = gb.Matrix(bool, mask.nrows, mask.ncols)
@@ -322,37 +299,37 @@ def search(
     def children(body):
         if n_hops == 1:
             for h in contexts.children(body[0], a, b):
-                yield (h,)
+                yield 0, (h,)
             return
         if n_hops == 3:
             yield from children_3(body)
             return
         h1, c1, h2 = body
-        for h in contexts.children(h1, a, c1):
-            yield (h, c1, h2)
-        for h in contexts.children(h2, c1, b):
-            yield (h1, c1, h)
         for c in classes.children[c1]:
             n1, n2 = h1 & contexts.mask(a, c), h2 & contexts.mask(c, b)
             if n1 and n2:
-                yield (n1, c, n2)
+                yield 0, (n1, c, n2)
+        for h in contexts.children(h1, a, c1):
+            yield 1, (h, c1, h2)
+        for h in contexts.children(h2, c1, b):
+            yield 2, (h1, c1, h)
 
     def children_3(body):
         h1, c1, h2, c2, h3 = body
-        for h in contexts.children(h1, a, c1):
-            yield (h, c1, h2, c2, h3)
-        for h in contexts.children(h2, c1, c2):
-            yield (h1, c1, h, c2, h3)
-        for h in contexts.children(h3, c2, b):
-            yield (h1, c1, h2, c2, h)
         for c in classes.children[c1]:
             n1, n2 = h1 & contexts.mask(a, c), h2 & contexts.mask(c, c2)
             if n1 and n2:
-                yield (n1, c, n2, c2, h3)
+                yield 0, (n1, c, n2, c2, h3)
         for c in classes.children[c2]:
             n2, n3 = h2 & contexts.mask(c1, c), h3 & contexts.mask(c, b)
             if n2 and n3:
-                yield (h1, c1, n2, c, n3)
+                yield 1, (h1, c1, n2, c, n3)
+        for h in contexts.children(h1, a, c1):
+            yield 2, (h, c1, h2, c2, h3)
+        for h in contexts.children(h2, c1, c2):
+            yield 3, (h1, c1, h, c2, h3)
+        for h in contexts.children(h3, c2, b):
+            yield 4, (h1, c1, h2, c2, h)
 
     def name(body):
         if n_hops == 1:
@@ -364,9 +341,6 @@ def search(
         h1, c1, h2 = body
         return f"{contexts.label(h1, a, c1)} | {classes.label(c1)} | {contexts.label(h2, c1, b)}"
 
-    def specificity(body):
-        return sum(classes.sets[c].bit_count() for c in body[1::2])
-
     if n_hops == 1:
         root = (hops.sets[hops.root] & contexts.mask(a, b),)
     elif n_hops == 3:
@@ -375,6 +349,48 @@ def search(
     else:
         c = classes.root
         root = (hops.sets[hops.root] & contexts.mask(a, c), c, hops.sets[hops.root] & contexts.mask(c, b))
+    return root, children, overlap, name
+
+
+def search(
+    store: Store,
+    hops: Lattice,
+    classes: Lattice,
+    target: gb.Matrix,
+    subject_class: int,
+    object_class: int,
+    n_hops: int,
+    min_support: int,
+    time_limit: float,
+    cache_gb: float = 4.0,
+    contexts: HopContexts | None = None,
+    merge_equivalent: bool = True,
+) -> SearchStats:
+    """Depth-first specialization search over ``body_space``.
+
+    With ``merge_equivalent``, 2- and 3-hop bodies with the same canonical key
+    (``canonical_two_hop`` / ``canonical_three_hop``) are evaluated and reported once, labelled with the most
+    specific middle class seen; every raw state is still explored so nothing reachable
+    only through an equivalent class is lost.
+    """
+    contexts = contexts or HopContexts(store, hops, classes)
+    root, children, overlap, name = body_space(store, hops, classes, subject_class, object_class, n_hops,
+                                               cache_gb, contexts)
+    from_subject, to_object = contexts.endpoint_tables(subject_class, object_class) if n_hops > 1 else ({}, {})
+    pairs = contexts.pair_table() if n_hops == 3 else {}
+
+    def key_of(body):
+        if n_hops == 1 or not merge_equivalent:
+            return body
+        if n_hops == 3:
+            h1, c1, h2, c2, h3 = body
+            return canonical_three_hop(h1, classes.sets[c1], h2, classes.sets[c2], h3, from_subject, to_object, pairs)
+        h1, c1, h2 = body
+        return canonical_two_hop(h1, classes.sets[c1], h2, from_subject, to_object)
+
+    def specificity(body):
+        return sum(classes.sets[c].bit_count() for c in body[1::2])
+
     stats = SearchStats()
     start = time.time()
     root_overlap = overlap(root, target)
@@ -388,7 +404,7 @@ def search(
     stack = [(root, root_overlap, 0)]
     while stack and time.time() - start < time_limit:
         body, mask, depth = stack.pop()
-        for child in children(body):
+        for _, child in children(body):
             if child in explored:
                 continue
             explored.add(child)
@@ -418,3 +434,85 @@ def search(
     stats.seconds = time.time() - start
     stats.complete = not stack
     return stats
+
+
+def estimate_size(
+    store: Store,
+    hops: Lattice,
+    classes: Lattice,
+    target: gb.Matrix,
+    subject_class: int,
+    object_class: int,
+    n_hops: int,
+    min_support: int,
+    probes: int,
+    seed: int = 0,
+    cache_gb: float = 4.0,
+    contexts: HopContexts | None = None,
+    time_limit: float = float("inf"),
+    progress=None,
+) -> list[dict]:
+    """Knuth random-probe estimate of the support-pruned search size, one dict per probe.
+
+    Each probe walks from the root, refining in non-decreasing coordinate order (so a
+    body is reached by about one route rather than one per refinement ordering), and
+    picks a uniformly random passing child at each step. With ``w`` the product of the
+    passing-child counts so far, a step that evaluates ``k`` children of which ``p``
+    pass adds ``w*k`` evaluated and ``w*p`` passing bodies at the next depth; the mean
+    over probes is an unbiased estimate for the coordinate-ordered tree. That tree
+    still repeats bodies reachable through several class or hop parents, so it
+    overestimates the deduplicated search somewhat.
+
+    Probe dicts: ``evaluated`` / ``passed`` (depth -> estimate), ``by_classes``
+    (middle-class tuple -> estimated evaluations), ``seconds``, ``evaluations`` (actually done).
+    No new probe starts after ``time_limit`` seconds; ``progress(probe)`` is called after each.
+    """
+    contexts = contexts or HopContexts(store, hops, classes)
+    root, children, overlap, _ = body_space(store, hops, classes, subject_class, object_class, n_hops,
+                                               cache_gb, contexts)
+    rng = np.random.default_rng(seed)
+    root_overlap = overlap(root, target)
+    if root_overlap.nvals < min_support:
+        return []
+    top: dict[tuple, tuple[int, list]] = {}  # root and its children: (#children, passing [(coord, body, overlap)])
+
+    def expand(body, mask, last):
+        kids = [(coord, child) for coord, child in children(body) if coord >= last]
+        passing = []
+        for coord, child in kids:
+            child_overlap = overlap(child, mask)
+            if child_overlap.nvals >= min_support:
+                passing.append((coord, child, child_overlap))
+        return len(kids), passing
+
+    results = []
+    deadline = time.time() + time_limit
+    while len(results) < probes and time.time() < deadline:
+        start = time.time()
+        evaluated: dict[int, float] = {}
+        passed: dict[int, float] = {}
+        by_classes: dict[tuple, float] = {}
+        body, mask, last, depth, weight, done = root, root_overlap, 0, 0, 1.0, 0
+        while True:
+            key = (body, last)
+            if depth <= 1 and key in top:
+                n_kids, passing = top[key]
+            else:
+                n_kids, passing = expand(body, mask, last)
+                done += n_kids
+                if depth <= 1:
+                    top[key] = (n_kids, passing)
+            evaluated[depth + 1] = evaluated.get(depth + 1, 0.0) + weight * n_kids
+            passed[depth + 1] = passed.get(depth + 1, 0.0) + weight * len(passing)
+            middle = body[1::2]
+            by_classes[middle] = by_classes.get(middle, 0.0) + weight * n_kids
+            if not passing:
+                break
+            last, body, mask = passing[rng.integers(len(passing))]
+            weight *= len(passing)
+            depth += 1
+        results.append({"evaluated": evaluated, "passed": passed, "by_classes": by_classes,
+                        "seconds": time.time() - start, "evaluations": done})
+        if progress:
+            progress(results[-1])
+    return results
