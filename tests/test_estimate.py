@@ -72,3 +72,22 @@ def test_ordered_refinement_reaches_every_passing_body(setup, n_hops, min_suppor
     stats = search(store, hops, classes, target, chem, dopf, n_hops, min_support, 600, merge_equivalent=False)
     assert stats.complete
     assert {row[0] for row in stats.rows if row[3] >= min_support} == bodies
+
+
+@pytest.mark.parametrize("n_hops,min_support", [(2, 1), (3, 2)])
+def test_split_ordered_exploration_covers_every_passing_body(setup, n_hops, min_support):
+    """Expanding one body at a time and handing the frontier back as separate work
+    units (as pool workers do on timeout) must find every passing body."""
+    from biolink_rules.search import explore_ordered
+
+    store, hops, classes, chem, dopf, target = setup
+    _, _, bodies = ordered_tree(setup, n_hops, min_support)
+    root, children, overlap, _ = body_space(store, hops, classes, chem, dopf, n_hops, 0.1,
+                                            HopContexts(store, hops, classes))
+    found = {root}
+    work = [(root, 0, overlap(root, target), 0)]
+    while work:
+        rows, _, frontier = explore_ordered(children, overlap, *work.pop(), min_support, deadline=0.0)
+        found |= {row[0] for row in rows}
+        work += frontier
+    assert found == bodies

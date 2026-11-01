@@ -19,10 +19,9 @@ CATEGORIES = [
 ]
 
 
-@pytest.fixture(scope="module")
-def world(tmp_path_factory):
+def make_world(tmp):
+    """Ingest + build the random graph under ``tmp`` (ingest/, build/, config.yaml)."""
     rng = random.Random(7)
-    tmp = tmp_path_factory.mktemp("search")
     kg = tmp / "kg"
     kg.mkdir()
     nodes = [{"id": f"N{i}", "category": CATEGORIES[i % 4]} for i in range(24)]
@@ -36,6 +35,12 @@ def world(tmp_path_factory):
     config.write_text("exclude_hop_predicates: []\ntarget_record_exclusions: []\n")
     ingest(kg, tmp / "ingest")
     build(tmp / "ingest", config, tmp / "build")
+
+
+@pytest.fixture(scope="module")
+def world(tmp_path_factory):
+    tmp = tmp_path_factory.mktemp("search")
+    make_world(tmp)
     store = Store.load(tmp / "build", tmp / "ingest")
     classes = class_lattice(read_category_sets(tmp / "ingest/category_sets.tsv"))
     hops = hop_lattice(read_atoms(tmp / "build/atoms.tsv"))

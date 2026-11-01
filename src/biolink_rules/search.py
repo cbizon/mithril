@@ -563,3 +563,32 @@ def estimate_size(
         if progress:
             progress(results[-1])
     return results
+
+
+def explore_ordered(children, overlap, body, last: int, mask: gb.Matrix, depth: int, min_support: int,
+                    deadline: float = float("inf")):
+    """Exhaustive search of the coordinate-ordered subtree below ``body`` (see ``body_space``).
+
+    ``body`` has already been evaluated (``mask`` is its overlap) and refined last in
+    coordinate ``last``. Children are refined in non-decreasing coordinate order, so
+    disjoint subtrees can be searched independently. Expands at least one body, then
+    stops starting new expansions once ``deadline`` has passed. Returns (passing rows ``(body, depth, overlap)``, number evaluated,
+    unexpanded frontier ``[(body, last, overlap matrix, depth)]``; empty when complete).
+    """
+    stack = [(body, last, mask, depth)]
+    seen = set()
+    rows, evaluated = [], 0
+    while stack:
+        body, last, mask, depth = stack.pop()
+        for coord, child in children(body):
+            if coord < last or (child, coord) in seen:
+                continue
+            seen.add((child, coord))
+            child_overlap = overlap(child, mask)
+            evaluated += 1
+            if child_overlap.nvals >= min_support:
+                rows.append((child, depth + 1, child_overlap.nvals))
+                stack.append((child, coord, child_overlap, depth + 1))
+        if time.time() >= deadline:
+            break
+    return rows, evaluated, stack
