@@ -10,7 +10,9 @@ stops when the pool is drained.
     seed     create the pool: root expanded breadth-first into >= --units units
     work     (inside a SLURM job) claim and search units for --budget seconds
     status   counts and totals so far
-    feed     keep the queue topped up to --max-jobs workers; requeue units of dead workers
+    feed     keep the queue topped up to --max-jobs workers; requeue units of dead workers.
+             Run it inside scripts/pool_feeder.sbatch (a small job that resubmits itself),
+             not on a login or interactive node.
 
 Layout: <pool>/meta.json, pending/, claimed/<jobid>__<unit>.pkl, done/,
 results/<unit>.tsv (passing bodies) and results/<unit>.json (counts).
@@ -164,7 +166,8 @@ def feed(args) -> None:
     repo = Path(__file__).resolve().parent.parent
     log = pool / "workers"
     log.mkdir(exist_ok=True)
-    while True:
+    stop = time.time() + args.stop_after
+    while time.time() < stop:
         jobs = our_jobs(job_name)
         for claimed in (pool / "claimed").glob("*.pkl"):
             job, unit = claimed.name.split("__", 1)
@@ -175,6 +178,7 @@ def feed(args) -> None:
         if t["pending"] == 0 and t["claimed"] == 0 and not jobs:
             print("pool drained", flush=True)
             status(args)
+            (pool / "DRAINED").touch()
             return
         waiting = sum(state == "PENDING" for state in jobs.values())
         # top up, but never queue more workers than there are units waiting for them
@@ -221,6 +225,8 @@ def main() -> None:
     f.add_argument("--cpus", type=int, default=8)
     f.add_argument("--mem", default="64G")
     f.add_argument("--interval", type=float, default=60)
+    f.add_argument("--stop-after", type=float, default=float("inf"),
+                   help="seconds; return (pool not drained) so a feeder job can resubmit itself")
     args = p.parse_args()
     {"seed": seed, "work": work, "status": status, "feed": feed}[args.command](args)
 
