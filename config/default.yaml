@@ -23,14 +23,15 @@ target_record_exclusions:
 # follows production semantics, so a constraint still matches descendant values.
 query_qualifiers:
   fields:
-    - qualified_predicate
+    # qualified_predicate is ignored: in this graph "affects X" vs "causes affected X"
+    # is not a meaningful distinction (likely an artifact of ingest), so it never
+    # becomes part of a label; edges carrying it still match the other qualifiers.
     - object_direction_qualifier
     - object_aspect_qualifier
     - subject_form_or_variant_qualifier
     - object_form_or_variant_qualifier
     # - causal_mechanism_qualifier   # inhibition/agonism/...; off for now
-  exact_value_fields:
-    - qualified_predicate
+  exact_value_fields: []
 
 # Classes that may NOT be the class of an intermediate path node. Endpoint and target
 # classes are unaffected; the unconstrained "(any)" root always remains. Agreed list
