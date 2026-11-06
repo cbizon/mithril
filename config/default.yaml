@@ -38,6 +38,11 @@ query_qualifiers:
   ignored_fields:
     biolink:affects: [qualified_predicate]
     biolink:regulates: [qualified_predicate]
+  # Per qualifier field, values below which no labels are generated: a stored value
+  # under a stop contributes only the stop and its ancestors (e.g. expression ->
+  # abundance). Its edges still match those labels by production semantics.
+  stops:
+    object_aspect_qualifier: [activity, abundance]
 
 # Classes that may NOT be the class of an intermediate path node. Endpoint and target
 # classes are unaffected; the unconstrained "(any)" root always remains. Agreed list
@@ -65,3 +70,9 @@ middle_class_exclusions:
   - biolink:Polypeptide                         #   288,883 vs Protein 288,876
   - biolink:OrganismalEntity                    #    35,648 vs AnatomicalEntity 35,128
   # kept on purpose: GeneOrGeneProduct (mixin, but a standard Translator query class)
+
+# Hop labels nearly equal to one of their children within a (class, class) context are
+# not refined to: if one child holds at least this share of a label's edges between the
+# two classes, the search steps over the label to its children (their subtrees would
+# otherwise be repeated). 1.0 = off.
+hop_near_duplicate: 0.95

@@ -54,6 +54,7 @@ def load_problem(data_dir: Path, config_path: Path, target: str, subject_class: 
         fields=tuple(qualifiers.get("fields", DEFAULT_QUERY_QUALIFIER_FIELDS)),
         exact_value_fields=tuple(qualifiers.get("exact_value_fields", DEFAULT_EXACT_VALUE_FIELDS)),
         ignored_fields={k: tuple(v) for k, v in (qualifiers.get("ignored_fields") or {}).items()},
+        stops={k: tuple(v) for k, v in (qualifiers.get("stops") or {}).items()},
     )
     store = Store.load(data_dir / "build", data_dir / "ingest")
     a, b = find(classes, subject_class), find(classes, object_class)
@@ -63,6 +64,7 @@ def load_problem(data_dir: Path, config_path: Path, target: str, subject_class: 
         rows=store.class_vector(classes.sets[a]),
         cols=store.class_vector(classes.sets[b]),
     )
-    return Problem(store, hops, classes, HopContexts(store, hops, classes), a, b, target_matrix,
+    contexts = HopContexts(store, hops, classes, config.get("hop_near_duplicate", 1.0))
+    return Problem(store, hops, classes, contexts, a, b, target_matrix,
                    f"{subject_class.removeprefix('biolink:')} {target} {object_class.removeprefix('biolink:')}",
                    target_bits)

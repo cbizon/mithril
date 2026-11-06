@@ -102,6 +102,17 @@ def test_ignored_fields_apply_only_to_their_predicate():
     assert lattice.sets[node] == (1 << 0) | (1 << 2)
 
 
+def test_stops_cut_labels_below_them():
+    atom = {"predicate": "biolink:affects", "object_aspect_qualifier": "expression"}
+    gens = qualifier_generalizations(atom, stops={"object_aspect_qualifier": ("abundance",)})
+    aspects = {v for c in gens for f, v in c if f == "object_aspect_qualifier"}
+    assert aspects == {"abundance", "activity_or_abundance"}
+    lattice = hop_lattice([atom], stops={"object_aspect_qualifier": ("abundance",)})
+    up = node_with_label(lattice, format_hop_label("biolink:affects", (("object_aspect_qualifier", "abundance"),), "F"))
+    assert lattice.sets[up] == 1  # the expression edge still matches its stop
+    assert not any("aspect=expression" in l for labels in lattice.labels for l in labels)
+
+
 def test_hop_lattice_structure():
     atoms = [
         {"predicate": "biolink:treats"},

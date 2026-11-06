@@ -139,19 +139,25 @@ def qualifier_generalizations(
     atom: dict[str, str],
     fields=DEFAULT_QUERY_QUALIFIER_FIELDS,
     exact_value_fields=DEFAULT_EXACT_VALUE_FIELDS,
+    stops: dict[str, tuple[str, ...]] | None = None,
 ) -> set[tuple[tuple[str, str], ...]]:
     """Constraint sets (sorted (field, value) tuples) to generate as labels from this atom.
 
     Only ``fields`` are used. Values of ``exact_value_fields`` are taken as observed;
-    other values also generalize to their Biolink enum ancestors. This only decides
-    which labels exist -- what a label matches is decided by production semantics.
+    other values also generalize to their Biolink enum ancestors. ``stops`` maps a field
+    to values below which labels are not generated (a value under a stop contributes
+    only the stop and its ancestors). This only decides which labels exist -- what a
+    label matches is decided by production semantics.
     """
+    stops = stops or {}
     options = []
     for name in fields:
         value = atom.get(name, "")
         if not value:
             continue
         values = {value} if name in exact_value_fields else enum_value_ancestors(value)
+        field_stops = set(stops.get(name, ()))
+        values = {v for v in values if not (enum_value_ancestors(v) - {v}) & field_stops}
         options.append([None, *((name, v) for v in sorted(values))])
     return {tuple(sorted(c for c in combo if c)) for combo in product(*options)}
 
@@ -187,16 +193,18 @@ def hop_lattice(
     fields=DEFAULT_QUERY_QUALIFIER_FIELDS,
     exact_value_fields=DEFAULT_EXACT_VALUE_FIELDS,
     ignored_fields: dict[str, tuple[str, ...]] | None = None,
+    stops: dict[str, tuple[str, ...]] | None = None,
 ) -> Lattice:
     """Lattice over all hop labels with a non-empty match set in this graph.
 
     ``ignored_fields`` maps a stored predicate to qualifier fields that never become
-    label constraints for its atoms (they still match labels built from other fields).
+    label constraints for its atoms (they still match labels built from other fields);
+    ``stops`` is passed to ``qualifier_generalizations``.
     """
     ignored_fields = ignored_fields or {}
     gens = [
         qualifier_generalizations(a, tuple(f for f in fields if f not in ignored_fields.get(a["predicate"], ())),
-                                  exact_value_fields)
+                                  exact_value_fields, stops)
         for a in atoms
     ]
     query_predicates = set().union(*(predicate_ancestors(a["predicate"]) for a in atoms))
