@@ -31,6 +31,11 @@ query_qualifiers:
     # - causal_mechanism_qualifier   # inhibition/agonism/...; off for now
   exact_value_fields:
     - qualified_predicate
+  # Per stored predicate, qualifier fields that never become label constraints (its
+  # edges still match labels built from the other fields). On affects, "causes
+  # affected expression" vs "affects expression" is not a meaningful distinction.
+  ignored_fields:
+    biolink:affects: [qualified_predicate]
 
 # Classes that may NOT be the class of an intermediate path node. Endpoint and target
 # classes are unaffected; the unconstrained "(any)" root always remains. Agreed list

@@ -87,6 +87,21 @@ def test_qualifiers_only_on_their_stored_predicate():
     assert lattice.sets[up] == (1 << 0) | (1 << 2)
 
 
+def test_ignored_fields_apply_only_to_their_predicate():
+    atoms = [
+        {"predicate": "biolink:affects", "qualified_predicate": "biolink:causes", "object_aspect_qualifier": "expression"},
+        {"predicate": "biolink:affects", "object_aspect_qualifier": "expression"},
+        {"predicate": "biolink:associated_with", "qualified_predicate": "biolink:causes"},
+    ]
+    lattice = hop_lattice(atoms, ignored_fields={"biolink:affects": ("qualified_predicate",)})
+    labels = {l for labels in lattice.labels for l in labels}
+    assert not any(l.startswith("affects[") and "qp=" in l for l in labels)
+    assert "associated_with[qp=causes]>" in labels
+    # the qualified affects edge still matches the label built from its other qualifier
+    node = node_with_label(lattice, format_hop_label("biolink:affects", (("object_aspect_qualifier", "expression"),), "F"))
+    assert lattice.sets[node] == (1 << 0) | (1 << 2)
+
+
 def test_hop_lattice_structure():
     atoms = [
         {"predicate": "biolink:treats"},

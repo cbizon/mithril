@@ -53,6 +53,7 @@ def load_problem(data_dir: Path, config_path: Path, target: str, subject_class: 
         read_atoms(data_dir / "build/atoms.tsv"),
         fields=tuple(qualifiers.get("fields", DEFAULT_QUERY_QUALIFIER_FIELDS)),
         exact_value_fields=tuple(qualifiers.get("exact_value_fields", DEFAULT_EXACT_VALUE_FIELDS)),
+        ignored_fields={k: tuple(v) for k, v in (qualifiers.get("ignored_fields") or {}).items()},
     )
     store = Store.load(data_dir / "build", data_dir / "ingest")
     a, b = find(classes, subject_class), find(classes, object_class)

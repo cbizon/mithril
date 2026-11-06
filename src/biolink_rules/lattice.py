@@ -186,9 +186,19 @@ def hop_lattice(
     atoms: list[dict[str, str]],
     fields=DEFAULT_QUERY_QUALIFIER_FIELDS,
     exact_value_fields=DEFAULT_EXACT_VALUE_FIELDS,
+    ignored_fields: dict[str, tuple[str, ...]] | None = None,
 ) -> Lattice:
-    """Lattice over all hop labels with a non-empty match set in this graph."""
-    gens = [qualifier_generalizations(a, fields, exact_value_fields) for a in atoms]
+    """Lattice over all hop labels with a non-empty match set in this graph.
+
+    ``ignored_fields`` maps a stored predicate to qualifier fields that never become
+    label constraints for its atoms (they still match labels built from other fields).
+    """
+    ignored_fields = ignored_fields or {}
+    gens = [
+        qualifier_generalizations(a, tuple(f for f in fields if f not in ignored_fields.get(a["predicate"], ())),
+                                  exact_value_fields)
+        for a in atoms
+    ]
     query_predicates = set().union(*(predicate_ancestors(a["predicate"]) for a in atoms))
     satisfying: dict[tuple, int] = {}  # constraint set -> bitmask over atoms (production semantics)
     for constraints in set().union(*gens):
