@@ -72,6 +72,21 @@ def test_exact_valued_label_still_matches_descendants():
     assert not any("qp=related_to" in l for labels in lattice.labels for l in labels)
 
 
+def test_qualifiers_only_on_their_stored_predicate():
+    atoms = [
+        {"predicate": "biolink:affects", "object_direction_qualifier": "increased", "object_aspect_qualifier": "expression"},
+        {"predicate": "biolink:regulates", "object_direction_qualifier": "increased"},
+        {"predicate": "biolink:treats"},
+    ]
+    lattice = hop_lattice(atoms)
+    labels = [l for labels in lattice.labels for l in labels]
+    qualified = {l.split("[")[0] for l in labels if "[" in l}
+    assert qualified == {"affects", "regulates"}
+    # a stored predicate's qualified label still matches qualified descendants
+    up = node_with_label(lattice, format_hop_label("biolink:affects", (("object_direction_qualifier", "increased"),), "F"))
+    assert lattice.sets[up] == (1 << 0) | (1 << 2)
+
+
 def test_hop_lattice_structure():
     atoms = [
         {"predicate": "biolink:treats"},

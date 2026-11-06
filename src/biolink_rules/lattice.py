@@ -1,6 +1,7 @@
 """Refinement lattices for the search, built by set inclusion over the data.
 
-Hop lattice: a *hop label* is (query predicate, qualifier constraints, direction). Its
+Hop lattice: a *hop label* is (query predicate, qualifier constraints, direction), with
+constraints only on a predicate that is stored with those qualifiers. Its
 meaning in this graph is the set of (atom, orientation) pairs it matches under
 production semantics (``semantics``). Labels with identical match sets collapse into
 one node; children are maximal proper subsets. The root is ``related_to`` (all atoms,
@@ -203,7 +204,10 @@ def hop_lattice(
         forward, reverse = expanded_predicates(predicate)
         f_mask = sum(1 << i for i, a in enumerate(atoms) if forward is None or a["predicate"] in forward)
         r_mask = sum(1 << i for i, a in enumerate(atoms) if forward is None or a["predicate"] in reverse)
-        candidates = set().union(*(gens[i] for i in range((f_mask | r_mask).bit_length()) if (f_mask | r_mask) >> i & 1))
+        # qualifiers belong to the predicate they are stored with: a predicate gets
+        # constraint sets only from its own atoms (no related_to[...]); what a label
+        # matches is still production semantics, so affects[...] also matches regulates
+        candidates = {()}.union(*(g for g, a in zip(gens, atoms) if a["predicate"] == predicate))
         for constraints in candidates:
             bits = spread(f_mask & satisfying[constraints], False) | spread(r_mask & satisfying[constraints], True)
             labelled[format_hop_label(predicate, constraints, "F")] = bits
