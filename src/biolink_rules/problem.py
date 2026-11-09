@@ -55,6 +55,7 @@ def load_problem(data_dir: Path, config_path: Path, target: str, subject_class: 
         exact_value_fields=tuple(qualifiers.get("exact_value_fields", DEFAULT_EXACT_VALUE_FIELDS)),
         ignored_fields={k: tuple(v) for k, v in (qualifiers.get("ignored_fields") or {}).items()},
         stops={k: tuple(v) for k, v in (qualifiers.get("stops") or {}).items()},
+        drops={k: tuple(v) for k, v in (qualifiers.get("drops") or {}).items()},
     )
     store = Store.load(data_dir / "build", data_dir / "ingest")
     a, b = find(classes, subject_class), find(classes, object_class)

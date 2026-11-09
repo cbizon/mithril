@@ -143,3 +143,15 @@ def test_lattice_order_is_independent_of_insertion_order():
     assert forward.sets == backward.sets
     assert forward.labels == backward.labels
     assert forward.children == backward.children
+
+
+def test_drops_fall_in_with_unqualified_labels():
+    atom = {"predicate": "biolink:affects", "object_aspect_qualifier": "hydrolysis",
+            "object_direction_qualifier": "increased"}
+    drops = {"object_aspect_qualifier": ("hydrolysis", "cleavage", "modulation")}
+    gens = qualifier_generalizations(atom, drops=drops)
+    assert gens == {(), (("object_direction_qualifier", "increased"),)}
+    lattice = hop_lattice([atom], drops=drops)
+    up = node_with_label(lattice, format_hop_label("biolink:affects", (("object_direction_qualifier", "increased"),), "F"))
+    assert lattice.sets[up] == 1
+    assert not any("aspect=" in l for labels in lattice.labels for l in labels)

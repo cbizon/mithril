@@ -42,7 +42,13 @@ query_qualifiers:
   # under a stop contributes only the stop and its ancestors (e.g. expression ->
   # abundance). Its edges still match those labels by production semantics.
   stops:
-    object_aspect_qualifier: [activity, abundance]
+    object_aspect_qualifier: [activity, abundance, molecular_modification]
+  # Per qualifier field, exact values that never become label constraints: their edges
+  # fall in with the unqualified-aspect labels. Transport is kept split because
+  # secretion and uptake are opposite directions.
+  drops:
+    object_aspect_qualifier: [modulation, cleavage, hydrolysis, degradation, splicing, localization,
+                              metabolic_processing, stability, mutation_rate, folding]
 
 # Classes that may NOT be the class of an intermediate path node. Endpoint and target
 # classes are unaffected; the unconstrained "(any)" root always remains. Agreed list
