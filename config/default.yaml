@@ -1,4 +1,4 @@
-# biolink-rules build configuration.
+# mithril build configuration.
 #
 # The PREDICTOR side always uses the graph exactly as production queries see it:
 # no edge is removed from predictor paths. The only predictor-side choice is which

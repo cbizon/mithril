@@ -3,7 +3,7 @@ import json
 import numpy as np
 import pytest
 
-from biolink_rules.ingest import EDGE_TYPE_FIELDS, edge_type_key, ingest
+from mithril.ingest import EDGE_TYPE_FIELDS, edge_type_key, ingest
 
 
 def write_jsonl(path, records):

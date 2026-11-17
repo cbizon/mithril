@@ -1,4 +1,4 @@
-# BIOLINK-RULES
+# MITHRIL
 
 ## Setup
 
@@ -17,8 +17,8 @@ qualified predicate matches more specific qualifier values. Mining rules for a s
 target edge type is the primary use case; "all targets" is a SLURM array over targets.
 
 Replaces `../metapath-counts` and `../biolink-rule-mining` (and the June
-`../kg-rule-mining` scaffold), which are archived. `../gandalf` is an external
-dependency used only to verify final rules.
+`../kg-rule-mining` scaffold), which are archived. `../gandalf` (a Translator query
+engine) is not a dependency; it is the engine the final rules are to be verified against.
 
 ## Design
 
@@ -62,8 +62,8 @@ dependency used only to verify final rules.
   Requires self-loops removed (done at build).
 - **Production fidelity.** Rules must behave under standard Translator querying, so the
   predictor side uses every edge as-is (no provenance filtering, no canonicalization at
-  build). Which stored atoms/orientations a query predicate matches is decided by Gandalf's
-  own `PredicateExpander`/`QualifierExpander` (`semantics.py`), quirks included (e.g.
+  build). Which stored atoms/orientations a query predicate matches follows the
+  reasoner-transpiler rules (`semantics.py`, same results as Gandalf's expanders), quirks included (e.g.
   `overlaps` does not match stored `part_of`). Node in class C iff C is in its KGX category
   list (KGX lists are ancestor-closed), same as Gandalf.
 - **Target evidence** is configurable (`target_record_exclusions`); default drops text-mined

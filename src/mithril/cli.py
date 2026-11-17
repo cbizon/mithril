@@ -1,4 +1,4 @@
-"""Command-line entry point: ``biolink-rules <stage> ...``."""
+"""Command-line entry point: ``mithril <stage> ...``."""
 
 from __future__ import annotations
 
@@ -6,12 +6,12 @@ import argparse
 import json
 from pathlib import Path
 
-from biolink_rules.build import build
-from biolink_rules.ingest import ingest
+from mithril.build import build
+from mithril.ingest import ingest
 
 
 def main(argv: list[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(prog="biolink-rules")
+    parser = argparse.ArgumentParser(prog="mithril")
     stages = parser.add_subparsers(dest="stage", required=True)
 
     p_ingest = stages.add_parser("ingest", help="KGX jsonl -> compact arrays (once per release)")

@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from biolink_rules.contexts import HopContexts, set_bits
+from mithril.contexts import HopContexts, set_bits
 
 
 @pytest.mark.parametrize("share", [0.0, 0.6, 0.95])
@@ -48,10 +48,10 @@ def test_near_duplicate_off_is_the_plain_lattice(world):
 
 
 def test_near_duplicate_label_is_stepped_over(tmp_path):
-    from biolink_rules.build import build
-    from biolink_rules.ingest import ingest
-    from biolink_rules.lattice import class_lattice, hop_lattice, read_atoms, read_category_sets
-    from biolink_rules.store import Store
+    from mithril.build import build
+    from mithril.ingest import ingest
+    from mithril.lattice import class_lattice, hop_lattice, read_atoms, read_category_sets
+    from mithril.store import Store
 
     kg = tmp_path / "kg"
     kg.mkdir()

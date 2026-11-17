@@ -1,4 +1,4 @@
-from biolink_rules.lattice import (
+from mithril.lattice import (
     ANY_CLASS,
     class_lattice,
     flip,
@@ -135,7 +135,7 @@ def test_hop_lattice_structure():
 
 
 def test_lattice_order_is_independent_of_insertion_order():
-    from biolink_rules.lattice import collapse
+    from mithril.lattice import collapse
 
     labelled = {"a": 0b111, "b": 0b011, "c": 0b001, "d": 0b100, "e": 0b011}
     forward = collapse(labelled)

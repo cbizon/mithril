@@ -1,4 +1,4 @@
-"""Rules for one target from path types (see biolink_rules.provenance).
+"""Rules for one target from path types (see mithril.provenance).
 
     types    path types and direct edge types of every target pair -> <run>/types.npz
              (minutes)
@@ -33,7 +33,7 @@ from pathlib import Path
 
 import numpy as np
 
-from biolink_rules.counter import (
+from mithril.counter import (
     PathTypeCounter,
     mask_array,
     merge_sketch_tables,
@@ -41,11 +41,11 @@ from biolink_rules.counter import (
     sketch_table,
     type_table,
 )
-from biolink_rules.pathsearch import body_masks, body_name, body_of, load_mined, mine, save_mined
-from biolink_rules.problem import load_problem
-from biolink_rules.provenance import count_pairs, pair_types, quotient, type_sketches, typed_graph
-from biolink_rules.report import rule_table
-from biolink_rules.score import Scored, greedy_rule_set
+from mithril.pathsearch import body_masks, body_name, body_of, load_mined, mine, save_mined
+from mithril.problem import load_problem
+from mithril.provenance import count_pairs, pair_types, quotient, type_sketches, typed_graph
+from mithril.report import rule_table
+from mithril.score import Scored, greedy_rule_set
 
 
 def open_run(run: Path):

@@ -5,7 +5,7 @@ import json
 import numpy as np
 import pytest
 
-from biolink_rules.counter import (
+from mithril.counter import (
     HLL_M,
     PathTypeCounter,
     hll_estimate,
@@ -15,8 +15,8 @@ from biolink_rules.counter import (
     sketch_table,
     type_table,
 )
-from biolink_rules.pathsearch import body_masks, body_of, mine
-from biolink_rules.provenance import count_pairs, pair_types, quotient, type_sketches, typed_graph
+from mithril.pathsearch import body_masks, body_of, mine
+from mithril.provenance import count_pairs, pair_types, quotient, type_sketches, typed_graph
 from brute import predicted
 
 
@@ -60,10 +60,10 @@ def test_direct_edge_types_are_those_of_the_pairs_edges(mining):
 
 def test_non_simple_walks_are_excluded(tmp_path):
     """Walks a-b-a-d (c == a) and a-d-c-d (b == d) must not count; a-b-c-d must."""
-    from biolink_rules.build import build
-    from biolink_rules.ingest import ingest
-    from biolink_rules.lattice import class_lattice, hop_lattice, read_atoms, read_category_sets
-    from biolink_rules.store import Store
+    from mithril.build import build
+    from mithril.ingest import ingest
+    from mithril.lattice import class_lattice, hop_lattice, read_atoms, read_category_sets
+    from mithril.store import Store
 
     def provenance(name, edges):
         tmp = tmp_path / name

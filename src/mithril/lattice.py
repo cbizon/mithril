@@ -22,8 +22,8 @@ from functools import cache
 from itertools import product
 from pathlib import Path
 
-from biolink_rules.build import ATOM_QUALIFIER_FIELDS
-from biolink_rules.semantics import expanded_predicates, qualifiers_match, toolkit
+from mithril.build import ATOM_QUALIFIER_FIELDS
+from mithril.semantics import expanded_predicates, qualifiers_match, toolkit
 
 
 @dataclass

@@ -1,8 +1,8 @@
-"""Query semantics against the real Biolink model (via Gandalf's expanders)."""
+"""Query semantics against the real Biolink model (reasoner-transpiler rules)."""
 
 import pytest
 
-from biolink_rules.semantics import match_orientations, matched_atoms
+from mithril.semantics import match_orientations, matched_atoms
 
 
 def atom(predicate, **qualifiers):

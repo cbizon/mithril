@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from biolink_rules.score import Scored
+from mithril.score import Scored
 
 
 def rule_table(rows: list[Scored], set_columns: list[tuple[int, float]] | None = None) -> list[str]:

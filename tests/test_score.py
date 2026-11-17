@@ -2,8 +2,8 @@
 
 import numpy as np
 
-from biolink_rules.pathsearch import load_mined, mine, save_mined
-from biolink_rules.score import Scored, greedy_rule_set
+from mithril.pathsearch import load_mined, mine, save_mined
+from mithril.score import Scored, greedy_rule_set
 
 
 def bits(*pairs):

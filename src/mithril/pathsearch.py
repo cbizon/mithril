@@ -15,7 +15,7 @@ from dataclasses import dataclass
 import numba as nb
 import numpy as np
 
-from biolink_rules.counter import (
+from mithril.counter import (
     HLL_M,
     PathTypeCounter,
     _popcount,
@@ -25,8 +25,8 @@ from biolink_rules.counter import (
     restrict_pairs,
     with_direct,
 )
-from biolink_rules.problem import Problem
-from biolink_rules.provenance import Quotient
+from mithril.problem import Problem
+from mithril.provenance import Quotient
 
 
 @nb.njit(cache=True)

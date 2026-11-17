@@ -7,8 +7,8 @@ from pathlib import Path
 
 import numpy as np
 
-from biolink_rules.build import load_config
-from biolink_rules.lattice import (
+from mithril.build import load_config
+from mithril.lattice import (
     DEFAULT_EXACT_VALUE_FIELDS,
     DEFAULT_QUERY_QUALIFIER_FIELDS,
     Lattice,
@@ -17,8 +17,8 @@ from biolink_rules.lattice import (
     read_atoms,
     read_category_sets,
 )
-from biolink_rules.contexts import HopContexts
-from biolink_rules.store import Store
+from mithril.contexts import HopContexts
+from mithril.store import Store
 
 
 @dataclass

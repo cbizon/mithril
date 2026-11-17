@@ -4,9 +4,9 @@ every direct label, with brute-force overlaps and supports."""
 import numpy as np
 import pytest
 
-from biolink_rules.counter import HLL_M, hll_estimate, hll_register
-from biolink_rules.pathsearch import body_masks, body_name, body_of, direct_lattice, mine
-from biolink_rules.provenance import count_pairs
+from mithril.counter import HLL_M, hll_estimate, hll_register
+from mithril.pathsearch import body_masks, body_name, body_of, direct_lattice, mine
+from mithril.provenance import count_pairs
 from brute import ordered_tree, pairs_of, predicted
 from conftest import make_problem
 

@@ -33,9 +33,9 @@ from dataclasses import dataclass
 import numba as nb
 import numpy as np
 
-from biolink_rules.counter import HLL_M, _mix, hll_register
-from biolink_rules.lattice import Lattice
-from biolink_rules.store import Store
+from mithril.counter import HLL_M, _mix, hll_register
+from mithril.lattice import Lattice
+from mithril.store import Store
 
 
 @dataclass
@@ -560,7 +560,7 @@ def count_pairs(graph: TypedGraph, q: Quotient, subjects: np.ndarray, is_object:
     """Exact number of distinct pairs (a in subjects, d with ``is_object``, a != d) joined by
     a body given as type masks ``(direct, e1, k1, e2, k2, e3)``: ``direct`` is 0 for none;
     a 2-hop path has the none type as ``k2`` and ``e3``; no path has it everywhere."""
-    from biolink_rules.counter import mask_array
+    from mithril.counter import mask_array
 
     direct, e1, k1, e2, k2, e3 = masks
     none_e, none_k = 1 << q.none_edge, 1 << q.none_node

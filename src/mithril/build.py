@@ -19,7 +19,7 @@ from pathlib import Path
 import numpy as np
 import yaml
 
-from biolink_rules.ingest import EDGE_TYPE_FIELDS
+from mithril.ingest import EDGE_TYPE_FIELDS
 
 ATOM_QUALIFIER_FIELDS = (
     "qualified_predicate",

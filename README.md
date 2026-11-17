@@ -73,9 +73,6 @@ Paths never visit a node twice, so the target edge cannot appear inside its own 
 Requirements:
 
 - Python 3.12 or later and [uv](https://docs.astral.sh/uv/).
-- A checkout of [gandalf](https://github.com/ranking-agent/gandalf) in a sibling directory
-  (`../gandalf`). Mithril uses its predicate and qualifier expansion so that rule matching
-  agrees with the production query engine. The path is set in `pyproject.toml`.
 - A Biolink graph in KGX format: a directory with `nodes.jsonl` and `edges.jsonl`.
   Development used Translator KG 1.0.2 (1.85 million nodes, 30.5 million edges).
 
@@ -84,16 +81,18 @@ uv sync
 uv run pytest
 ```
 
-The Python package and command are still named `biolink_rules` / `biolink-rules`, the
-project's working name before it moved to this repository.
+Which stored edges a rule label matches follows the reasoner-transpiler rules used by
+Translator query engines such as [Gandalf](https://github.com/ranking-agent/gandalf).
+They are implemented in `src/mithril/semantics.py` on top of the Biolink Model Toolkit
+(`bmt`).
 
 ## Usage
 
 Prepare the graph once per release:
 
 ```bash
-uv run biolink-rules ingest --kg ../translator_kg/1.0.2 --out data/1.0.2/ingest
-uv run biolink-rules build  --ingest data/1.0.2/ingest --out data/1.0.2/build
+uv run mithril ingest --kg ../translator_kg/1.0.2 --out data/1.0.2/ingest
+uv run mithril build  --ingest data/1.0.2/ingest --out data/1.0.2/build
 ```
 
 Mine rules for one target. All four steps write into one run directory:
@@ -191,10 +190,10 @@ Whether to keep such edges out of rule bodies is an open question.
 ## Layout
 
 ```
-src/biolink_rules/
+src/mithril/
   ingest.py       KGX jsonl -> compact arrays
   build.py        ingest + config -> deduplicated edges per stored predicate and qualifiers
-  semantics.py    which stored edges a query label matches (via gandalf)
+  semantics.py    which stored edges a query label matches
   lattice.py      the general-to-specific orderings of hop labels and classes
   contexts.py     hop labels that can occur between a given pair of classes
   store.py        the built graph, loaded
@@ -207,3 +206,7 @@ src/biolink_rules/
 scripts/mine.py   the four mining steps
 tests/            every count is checked against brute force on small graphs
 ```
+
+## License
+
+MIT. See `LICENSE`.

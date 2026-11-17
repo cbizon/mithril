@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import numpy as np
 
-from biolink_rules.lattice import Lattice, hasse
-from biolink_rules.store import Store
+from mithril.lattice import Lattice, hasse
+from mithril.store import Store
 
 
 class HopContexts:

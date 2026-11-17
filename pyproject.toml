@@ -1,15 +1,16 @@
 [project]
-name = "biolink-rules"
+name = "mithril"
 version = "0.1.0"
 description = "Rule mining over Biolink knowledge graphs with Biolink query semantics"
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [
     { name = "cbizon", email = "bizon@renci.org" }
 ]
 requires-python = ">=3.12"
 dependencies = [
     "bmt>=1.5.0",
-    "gandalf-csr",
     "numba>=0.68.1",
     "numpy>=2.5.4",
     "orjson>=3.13.0",
@@ -28,12 +29,9 @@ dev = [
 ]
 
 [project.scripts]
-biolink-rules = "biolink_rules.cli:main"
+mithril = "mithril.cli:main"
 
 [tool.pytest.ini_options]
 addopts = "--doctest-modules"
 pythonpath = ["tests"]
 testpaths = ["tests", "src"]
-
-[tool.uv.sources]
-gandalf-csr = { path = "../gandalf", editable = true }

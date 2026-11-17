@@ -3,8 +3,8 @@ import json
 import numpy as np
 import pytest
 
-from biolink_rules.build import build
-from biolink_rules.ingest import ingest
+from mithril.build import build
+from mithril.ingest import ingest
 
 
 def write_jsonl(path, records):
@@ -81,7 +81,7 @@ def test_unknown_exclusion_field_fails(tmp_path, built):
 
 
 def test_config_extends(tmp_path):
-    from biolink_rules.build import load_config
+    from mithril.build import load_config
     (tmp_path / "base.yaml").write_text("a: 1\nb: [x]\n")
     (tmp_path / "child.yaml").write_text("extends: base.yaml\nb: [y]\nc: 3\n")
     assert load_config(tmp_path / "child.yaml") == {"a": 1, "b": ["y"], "c": 3}

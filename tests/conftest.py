@@ -7,10 +7,10 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from biolink_rules.build import build
-from biolink_rules.ingest import ingest
-from biolink_rules.lattice import class_lattice, hop_lattice, read_atoms, read_category_sets
-from biolink_rules.store import Store
+from mithril.build import build
+from mithril.ingest import ingest
+from mithril.lattice import class_lattice, hop_lattice, read_atoms, read_category_sets
+from mithril.store import Store
 
 PREDICATES = ["biolink:treats", "biolink:affects", "biolink:interacts_with", "biolink:has_phenotype", "biolink:causes"]
 CATEGORIES = [
@@ -51,8 +51,8 @@ def world(tmp_path_factory):
 
 def make_problem(world, near_duplicate: float = 1.0):
     """Chemical -treats-> DiseaseOrPhenotypicFeature on the shared graph."""
-    from biolink_rules.contexts import HopContexts
-    from biolink_rules.problem import Problem, find
+    from mithril.contexts import HopContexts
+    from mithril.problem import Problem, find
 
     store, hops, classes = world
     chem, dopf = find(classes, "biolink:ChemicalEntity"), find(classes, "biolink:DiseaseOrPhenotypicFeature")
@@ -65,8 +65,8 @@ def make_problem(world, near_duplicate: float = 1.0):
 @pytest.fixture(scope="module")
 def mining(world):
     """The problem with its provenance: everything the counters and the search need."""
-    from biolink_rules.counter import sketch_table, type_table
-    from biolink_rules.provenance import pair_types, quotient, type_sketches, typed_graph
+    from mithril.counter import sketch_table, type_table
+    from mithril.provenance import pair_types, quotient, type_sketches, typed_graph
 
     problem = make_problem(world)
     store, classes = problem.store, problem.classes

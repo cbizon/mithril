@@ -26,9 +26,9 @@ from pathlib import Path
 import graphblas as gb
 import numpy as np
 
-from biolink_rules.lattice import ANY_CLASS, read_atoms
-from biolink_rules.problem import find, load_problem
-from biolink_rules.semantics import matched_atoms
+from mithril.lattice import ANY_CLASS, read_atoms
+from mithril.problem import find, load_problem
+from mithril.semantics import matched_atoms
 
 SOURCE, TARGET = "$source", "$target"
 

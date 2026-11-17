@@ -17,7 +17,7 @@ import numba as nb
 import numpy as np
 
 if TYPE_CHECKING:
-    from biolink_rules.provenance import Quotient
+    from mithril.provenance import Quotient
 
 HLL_P = 10  # 1024 registers: ~3% standard error
 HLL_M = 1 << HLL_P
