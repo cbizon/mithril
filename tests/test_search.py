@@ -1,151 +1,86 @@
-"""Search supports must equal brute-force counts under the same lattice semantics."""
+"""The table search must find exactly the search tree, at every path length and under
+every direct label, with brute-force overlaps and supports."""
 
-import json
-
+import numpy as np
 import pytest
 
-from biolink_rules.search import HopContexts, restrict, search, set_bits
-from brute import members, pairs_of
-
-@pytest.mark.parametrize("n_hops", [1, 2])
-def test_search_supports_match_brute_force(world, n_hops):
-    store, hops, classes = world
-    (treats,) = [i for i, labels in enumerate(hops.labels) if "treats>" in labels]
-    (chem,) = [i for i, labels in enumerate(classes.labels) if "biolink:ChemicalEntity" in labels]
-    (dopf,) = [i for i, labels in enumerate(classes.labels) if "biolink:DiseaseOrPhenotypicFeature" in labels]
-    a_nodes, b_nodes = members(store, classes, chem), members(store, classes, dopf)
-    target_pairs = {(a, b) for a, b in pairs_of(store, hops.sets[treats]) if a in a_nodes and b in b_nodes}
-    target = restrict(
-        store.hop_matrix(hops.sets[treats], target_only=True),
-        rows=store.class_vector(classes.sets[chem]),
-        cols=store.class_vector(classes.sets[dopf]),
-    )
-    assert target.nvals == len(target_pairs)
-
-    stats = search(store, hops, classes, target, chem, dopf, n_hops, min_support=1, time_limit=600)
-    assert stats.complete
-    assert stats.evaluated >= 10
-    for body, _, _, support, _ in stats.rows:
-        if n_hops == 1:
-            predicted = pairs_of(store, body[0])
-        else:
-            h1, c1, h2 = body
-            mid = members(store, classes, c1)
-            first, second = pairs_of(store, h1), pairs_of(store, h2)
-            predicted = {(a, d) for a, b in first if b in mid for b2, d in second if b2 == b}
-        assert support == len(predicted & target_pairs), body
+from biolink_rules.counter import HLL_M, hll_estimate, hll_register
+from biolink_rules.pathsearch import body_masks, body_name, body_of, direct_lattice, mine
+from biolink_rules.provenance import count_pairs
+from brute import ordered_tree, pairs_of, predicted
+from conftest import make_problem
 
 
-def predicted_pairs(store, classes, body, a_nodes, b_nodes):
-    h1, c1, h2 = body
-    mid = members(store, classes, c1)
-    return frozenset((a, d) for a, b in pairs_of(store, h1) if a in a_nodes and b in mid
-                     for b2, d in pairs_of(store, h2) if b2 == b and d in b_nodes)
+def expected_rules(problem, m, min_support, hops=(2, 3)):
+    """{(direct node, hops): ({body: overlap}, evaluated)} by brute force."""
+    store, classes = problem.store, problem.classes
+    cache = {}
+
+    def joined(path):
+        if path not in cache:
+            cache[path] = predicted(store, classes, (0, path), m.a_nodes, m.b_nodes) & m.target_pairs
+        return cache[path]
+
+    out = {(-1, n): ordered_tree(problem, n, min_support, lambda path: len(joined(path))) for n in hops}
+    lattice = direct_lattice(problem)
+    seen, stack = {lattice.root}, [lattice.root]
+    while stack:
+        node = stack.pop()
+        having = pairs_of(store, lattice.sets[node])
+        if len(having & m.target_pairs) < min_support:
+            continue
+        for n in (0, *hops):
+            out[node, n] = ordered_tree(problem, n, min_support, lambda path: len(joined(path) & having))
+        for child in lattice.children[node]:
+            if child not in seen:
+                seen.add(child)
+                stack.append(child)
+    return out
 
 
-def test_merging_equivalent_bodies_is_exact_and_complete(world):
-    store, hops, classes = world
-    (treats,) = [i for i, labels in enumerate(hops.labels) if "treats>" in labels]
-    (chem,) = [i for i, labels in enumerate(classes.labels) if "biolink:ChemicalEntity" in labels]
-    (dopf,) = [i for i, labels in enumerate(classes.labels) if "biolink:DiseaseOrPhenotypicFeature" in labels]
-    target = restrict(store.hop_matrix(hops.sets[treats], target_only=True),
-                      rows=store.class_vector(classes.sets[chem]), cols=store.class_vector(classes.sets[dopf]))
-    a_nodes, b_nodes = members(store, classes, chem), members(store, classes, dopf)
-
-    raw = search(store, hops, classes, target, chem, dopf, 2, 1, 600, merge_equivalent=False)
-    merged = search(store, hops, classes, target, chem, dopf, 2, 1, 600)
-    assert merged.complete and merged.evaluated < raw.evaluated, (merged.evaluated, raw.evaluated)
-    raw_sets = {predicted_pairs(store, classes, r[0], a_nodes, b_nodes) for r in raw.rows if r[3] >= 1}
-    merged_sets = [predicted_pairs(store, classes, r[0], a_nodes, b_nodes) for r in merged.rows if r[3] >= 1]
-    # every distinct passing rule of the raw search is still found
-    assert raw_sets <= set(merged_sets)
-
-
-@pytest.mark.parametrize("share", [0.0, 0.6, 0.95])
-def test_near_duplicate_stepping_keeps_lattice_reachable(world, share):
-    store, hops, classes = world
-    plain = HopContexts(store, hops, classes)
-    pruned = HopContexts(store, hops, classes, near_duplicate=share)
-    for left in range(len(classes.sets)):
-        for right in range(len(classes.sets)):
-            if not plain.mask(left, right):
-                continue
-            lattice, _ = pruned.lattice(left, right)
-            kids = pruned.kept_children(left, right)
-            counts = pruned.edge_counts(left, right)
-            weight = [sum(counts.get(b, 0) for b in set_bits(bits)) for bits in lattice.sets]
-            near = {i for i in range(len(lattice.sets)) if i != lattice.root and lattice.children[i]
-                    and max(weight[c] for c in lattice.children[i]) >= share * weight[i]}
-            seen, stack = {lattice.root}, [lattice.root]
-            while stack:
-                node = stack.pop()
-                for c in kids[node]:
-                    assert c not in near
-                    assert lattice.sets[c] != lattice.sets[node] and lattice.sets[c] & ~lattice.sets[node] == 0
-                    if c not in seen:
-                        seen.add(c)
-                        stack.append(c)
-            # every node that is not stepped over stays reachable from the root
-            assert seen == set(range(len(lattice.sets))) - near
+@pytest.mark.parametrize("near_duplicate", [1.0, 0.6])
+@pytest.mark.parametrize("min_support", [1, 3])
+def test_search_finds_the_tree_at_every_length_and_direct_label(mining, near_duplicate, min_support):
+    m = mining
+    problem = make_problem(m.world, near_duplicate)
+    lattice = direct_lattice(problem)
+    expected = expected_rules(problem, m, min_support)
+    mined = mine(problem, m.q, m.table, m.direct, m.sketch, min_support)
+    assert {(x.direct, x.hops) for x in mined} == set(expected)
+    assert {x.direct for x in mined} > {-1} and sum(len(x.overlap) for x in mined) > 100
+    for x in mined:
+        passing, evaluated = expected[x.direct, x.hops]
+        direct = lattice.sets[x.direct] if x.direct >= 0 else 0
+        found = {body_of(problem, x, i): int(x.overlap[i]) for i in range(len(x.overlap))}
+        assert len(found) == len(x.overlap)  # each body once
+        assert found == {(direct, path): n for path, n in passing.items()}
+        assert x.evaluated == evaluated
 
 
-def test_near_duplicate_off_is_the_plain_lattice(world):
-    store, hops, classes = world
-    contexts = HopContexts(store, hops, classes, near_duplicate=1.0)
-    for left in range(len(classes.sets)):
-        for right in range(len(classes.sets)):
-            if contexts.mask(left, right):
-                lattice, _ = contexts.lattice(left, right)
-                for bits in lattice.sets:
-                    expected = [lattice.sets[c] for c in lattice.children[lattice.sets.index(bits)]]
-                    assert contexts.children(bits, left, right) == expected
+def test_supports_are_the_sketch_and_the_exact_count_of_the_predicted_pairs(mining):
+    m = mining
+    problem, store = m.problem, m.problem.store
+    mined = mine(problem, m.q, m.table, m.direct, m.sketch, 2)
+    checked = set()
+    for x in mined:
+        for i in range(0, len(x.overlap), 7):
+            body = body_of(problem, x, i)
+            pairs = predicted(store, problem.classes, body, m.a_nodes, m.b_nodes)
+            assert not body[0] & problem.target_bits  # the target edge is never a predictor
+            assert x.overlap[i] == len(pairs & m.target_pairs), body_name(problem, body)
+            registers = np.zeros(HLL_M, dtype=np.uint8)
+            for a, d in pairs:
+                idx, rank = hll_register(a, d, store.n_nodes)
+                registers[idx] = max(registers[idx], rank)
+            assert x.support[i] == pytest.approx(hll_estimate(registers)), body_name(problem, body)
+            assert x.support[i] == pytest.approx(len(pairs), rel=0.1, abs=1)
+            assert count_pairs(m.graph, m.q, m.subjects, m.is_object, body_masks(problem, m.q, body)) == len(pairs)
+            checked.add((x.direct >= 0, x.hops))
+    assert checked == {(False, 2), (False, 3), (True, 0), (True, 2), (True, 3)}
 
 
-def test_near_duplicate_label_is_stepped_over(tmp_path):
-    from biolink_rules.build import build
-    from biolink_rules.ingest import ingest
-    from biolink_rules.lattice import class_lattice, hop_lattice, read_atoms, read_category_sets
-    from biolink_rules.search import Store
-
-    kg = tmp_path / "kg"
-    kg.mkdir()
-    chems = [{"id": f"C{i}", "category": ["biolink:NamedThing", "biolink:ChemicalEntity"]} for i in range(20)]
-    genes = [{"id": f"G{i}", "category": ["biolink:NamedThing", "biolink:BiologicalEntity", "biolink:Gene"]}
-             for i in range(20)]
-    edges = ([("expression", "increased", i) for i in range(10)] + [("expression", "decreased", 10)]
-             + [("activity", "increased", i) for i in range(11, 16)])
-    (kg / "nodes.jsonl").write_text("".join(json.dumps(n) + "\n" for n in chems + genes))
-    (kg / "edges.jsonl").write_text("".join(json.dumps(
-        {"subject": f"C{i}", "object": f"G{i}", "predicate": "biolink:affects",
-         "object_aspect_qualifier": aspect, "object_direction_qualifier": direction}) + "\n"
-        for aspect, direction, i in edges))
-    config = tmp_path / "config.yaml"
-    config.write_text("exclude_hop_predicates: []\ntarget_record_exclusions: []\n")
-    ingest(kg, tmp_path / "ingest")
-    build(tmp_path / "ingest", config, tmp_path / "build")
-    store = Store.load(tmp_path / "build", tmp_path / "ingest")
-    classes = class_lattice(read_category_sets(tmp_path / "ingest/category_sets.tsv"))
-    hops = hop_lattice(read_atoms(tmp_path / "build/atoms.tsv"))
-    (chem,) = [i for i, labels in enumerate(classes.labels) if "biolink:ChemicalEntity" in labels]
-    (gene,) = [i for i, labels in enumerate(classes.labels) if "biolink:Gene" in labels]
-
-    def reachable(contexts):
-        lattice, _ = contexts.lattice(chem, gene)
-        names, stack, seen = set(), [lattice.sets[lattice.root]], set()
-        while stack:
-            bits = stack.pop()
-            if bits in seen:
-                continue
-            seen.add(bits)
-            names.update(lattice.labels[lattice.sets.index(bits)])
-            stack += contexts.children(bits, chem, gene)
-        return names
-
-    plain = reachable(HopContexts(store, hops, classes))
-    # affects[aspect=expression] has 11 edges, 10 of them in its child [..., dir=increased]
-    pruned = reachable(HopContexts(store, hops, classes, near_duplicate=0.9))
-    assert "affects[aspect=expression]>" in plain
-    assert "affects[aspect=expression]>" not in pruned
-    assert "affects[aspect=expression,dir=increased]>" in pruned
-    assert "affects[aspect=expression,dir=decreased]>" in pruned
-    assert pruned < plain
+def test_search_without_a_sketch_or_direct_labels(mining):
+    m = mining
+    mined = mine(m.problem, m.q, m.table, m.direct, None, 2, hops=(2,), conditioned=False)
+    assert [(x.direct, x.hops) for x in mined] == [(-1, 2)]
+    assert len(mined[0].overlap) and np.isnan(mined[0].support).all()

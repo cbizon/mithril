@@ -5,6 +5,9 @@ between two consecutive chain nodes are AND-ed; edges directly between $source a
 $target become a mask on the chain product. Edge predicates + qualifier constraints are
 mapped to stored atoms with production semantics (``semantics.matched_atoms``).
 
+This rule language (AND-ed parallel edges, non-simple chains) is outside what the path-type
+engine mines, so this script carries its own boolean matrix products.
+
 Counts are over distinct (source, target) pairs within the target's class pair, a != d,
 with plain boolean products (no simple-path correction for chains of 3 hops).
 
@@ -91,11 +94,31 @@ def oriented_bits(edge: dict, left: str, atoms: list[dict], exclude_atoms: set[i
     return bits
 
 
+def hop_matrix(store, bits: int) -> gb.Matrix:
+    """Boolean N x N matrix of the (atom, orientation) set ``bits``."""
+    rows, cols = [], []
+    for bit in range(bits.bit_length()):
+        if not bits >> bit & 1:
+            continue
+        atom, reverse = divmod(bit, 2)
+        lo, hi = store.offsets[atom], store.offsets[atom + 1]
+        s, d = store.src[lo:hi], store.dst[lo:hi]
+        rows.append(d if reverse else s)
+        cols.append(s if reverse else d)
+    rows = np.concatenate(rows) if rows else np.array([], dtype=np.int32)
+    cols = np.concatenate(cols) if cols else np.array([], dtype=np.int32)
+    return gb.Matrix.from_coo(rows, cols, True, nrows=store.n_nodes, ncols=store.n_nodes)
+
+
+def node_vector(store, catset_bits: int) -> gb.Vector:
+    return gb.Vector.from_coo(np.flatnonzero(store.in_class(catset_bits)), True, size=store.n_nodes)
+
+
 def edges_matrix(store, edges: list[dict], left: str, atoms, exclude_atoms=frozenset()) -> gb.Matrix:
     """AND of all edges' matrices, oriented left -> right."""
     result = None
     for edge in edges:
-        m = store.hop_matrix(oriented_bits(edge, left, atoms, exclude_atoms))
+        m = hop_matrix(store, oriented_bits(edge, left, atoms, exclude_atoms))
         result = m if result is None else result.ewise_mult(m, gb.binary.pair).new()
     return result
 
@@ -116,10 +139,10 @@ def evaluate(problem, atoms, rule: dict, exclude_direct_atoms: set[int], cap: in
     def class_vector(node: str) -> gb.Vector:
         categories = query_graph["nodes"][node].get("categories") or []
         label = categories[0] if categories else ANY_CLASS
-        return store.class_vector(classes.sets[find(classes, label)])
+        return node_vector(store, classes.sets[find(classes, label)])
 
-    a_vec = store.class_vector(classes.sets[problem.subject_class])
-    b_vec = store.class_vector(classes.sets[problem.object_class])
+    a_vec = node_vector(store, classes.sets[problem.subject_class])
+    b_vec = node_vector(store, classes.sets[problem.object_class])
     mats = []
     for i, (u, v) in enumerate(zip(chain, chain[1:])):
         m = edges_matrix(store, pairs[u, v], u, atoms)
@@ -134,7 +157,8 @@ def evaluate(problem, atoms, rule: dict, exclude_direct_atoms: set[int], cap: in
         mask = edges_matrix(store, direct, SOURCE, atoms, exclude_direct_atoms)
         mask = select_cols(select_rows(mask, a_vec), b_vec)
 
-    target = problem.target
+    target = gb.Matrix.from_coo(problem.pairs[:, 0], problem.pairs[:, 1], True, nrows=store.n_nodes,
+                                ncols=store.n_nodes)
     support = overlap = 0
     capped = False
     rows = mats[0].reduce_rowwise(gb.monoid.any).new().to_coo()[0]
@@ -192,7 +216,7 @@ def main() -> None:
     problem = load_problem(args.data, args.config, args.target, args.subject_class, args.object_class)
     atoms = read_atoms(args.data / "build/atoms.tsv")
     target_atoms = {a for a, _ in matched_atoms((args.target_predicate, ()), atoms)}
-    n_target = problem.target.nvals
+    n_target = len(problem.pairs)
     print(f"setup {time.time() - t0:.0f}s; target pairs {n_target:,}", flush=True)
 
     columns = ["rule", "variant", "aragorn_std_conf", "aragorn_head_cov", "aragorn_pos", "aragorn_body",

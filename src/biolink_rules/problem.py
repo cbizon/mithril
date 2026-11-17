@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-import graphblas as gb
+import numpy as np
 
 from biolink_rules.build import load_config
 from biolink_rules.lattice import (
@@ -17,7 +17,8 @@ from biolink_rules.lattice import (
     read_atoms,
     read_category_sets,
 )
-from biolink_rules.search import HopContexts, Store, restrict
+from biolink_rules.contexts import HopContexts
+from biolink_rules.store import Store
 
 
 @dataclass
@@ -28,7 +29,7 @@ class Problem:
     contexts: HopContexts
     subject_class: int
     object_class: int
-    target: gb.Matrix
+    pairs: np.ndarray  # target pairs: distinct (subject, object) rows, sorted
     target_label: str
     target_bits: int  # atom-orientations matched by the target hop label
 
@@ -60,12 +61,8 @@ def load_problem(data_dir: Path, config_path: Path, target: str, subject_class: 
     store = Store.load(data_dir / "build", data_dir / "ingest")
     a, b = find(classes, subject_class), find(classes, object_class)
     target_bits = hops.sets[find(hops, target)]
-    target_matrix = restrict(
-        store.hop_matrix(target_bits, target_only=True),
-        rows=store.class_vector(classes.sets[a]),
-        cols=store.class_vector(classes.sets[b]),
-    )
+    pairs = store.target_pairs(target_bits, store.in_class(classes.sets[a]), store.in_class(classes.sets[b]))
     contexts = HopContexts(store, hops, classes, config.get("hop_near_duplicate", 1.0))
-    return Problem(store, hops, classes, contexts, a, b, target_matrix,
+    return Problem(store, hops, classes, contexts, a, b, pairs,
                    f"{subject_class.removeprefix('biolink:')} {target} {object_class.removeprefix('biolink:')}",
                    target_bits)
